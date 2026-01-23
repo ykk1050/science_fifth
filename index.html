@@ -142,7 +142,7 @@
             <div style="max-height: 200px; overflow-y: auto;">
                 <table id="records-table">
                     <thead>
-                        <tr><th>순위</th><th>이름</th><th>점수</th><th>정답</th></tr>
+                        <tr><th>순위</th><th>이름</th><th>점수</th><th>정답</th><th>최대콤보</th></tr>
                     </thead>
                     <tbody><!-- JS로 채움 --></tbody>
                 </table>
@@ -176,6 +176,14 @@ const playerImg = new Image();
 playerImg.src = 'spaceship.png';
 const enemyImg = new Image();
 enemyImg.src = 'alien.png';
+
+// 보스 이미지 로드
+const bossImgs = [];
+for(let i=1; i<=4; i++) {
+    const img = new Image();
+    img.src = `boss${i}.png`;
+    bossImgs.push(img);
+}
 
 // 문제 데이터 (전체 포함)
 const QUESTIONS = [
@@ -303,8 +311,17 @@ let enemies = [];
 let gates = [];
 let particles = [];
 let floatingTexts = [];
+let items = []; // 아이템 배열 추가
 
-// 문제 및 스폰 제어
+// 보스 관련 변수
+let boss = null;
+let bossSpawnScore = 1000; // 첫 보스 등장 점수
+
+// 아이템 효과 변수
+let shieldActive = false;
+let shieldTimer = 0;
+let feverActive = false;
+let feverTimer = 0;
 let currentQuestionObj = null;
 let nextGateFrame = 0;
 let player;
@@ -345,21 +362,22 @@ function checkSavedGame() {
     return localStorage.getItem(SAVE_KEY) !== null;
 }
 
-// 게임 기록 저장
-function saveRecord() {
-    let records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
-    records.push({
-        name: nickname,
-        score: Math.floor(score),
-        correct: totalCorrect,
-        date: new Date().toLocaleDateString()
-    });
-    // 점수 내림차순 정렬
-    records.sort((a, b) => b.score - a.score);
-    // 상위 10개만 유지
-    records = records.slice(0, 10);
-    localStorage.setItem(RECORD_KEY, JSON.stringify(records));
-}
+    // 게임 기록 저장
+    function saveRecord() {
+        let records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+        records.push({
+            name: nickname,
+            score: Math.floor(score),
+            correct: totalCorrect,
+            maxCombo: maxCombo, // 최대 콤보 추가
+            date: new Date().toLocaleDateString()
+        });
+        // 점수 내림차순 정렬
+        records.sort((a, b) => b.score - a.score);
+        // 상위 10개만 유지
+        records = records.slice(0, 10);
+        localStorage.setItem(RECORD_KEY, JSON.stringify(records));
+    }
 
 /**
  * 4. 클래스 정의
@@ -379,11 +397,23 @@ class Player {
         if (this.soldiers <= 0) endGame();
 
         // 발사 속도
-        const fireRate = Math.max(100, 500 - (this.soldiers * 2));
+        let fireRate = Math.max(100, 500 - (this.soldiers * 2));
+        if (feverActive) fireRate = 50; // 피버 시 초고속 연사
+
         const now = Date.now();
         if (now - this.lastShotTime > fireRate) {
             this.shoot();
             this.lastShotTime = now;
+        }
+        
+        // 아이템 타이머 감소
+        if (shieldActive) {
+            shieldTimer--;
+            if (shieldTimer <= 0) shieldActive = false;
+        }
+        if (feverActive) {
+            feverTimer--;
+            if (feverTimer <= 0) feverActive = false;
         }
     }
 
@@ -392,6 +422,21 @@ class Player {
         const maxIndividualDraw = 30; 
         const cx = this.x + this.width / 2;
         const cy = this.y + this.height / 2;
+
+        // 보호막 효과 그리기
+        if (shieldActive) {
+            ctx.strokeStyle = 'cyan';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 60, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.globalAlpha = 0.3;
+            ctx.fillStyle = 'cyan';
+            ctx.fill();
+            ctx.globalAlpha = 1.0;
+        }
+
+        // ... (기존 우주선 그리기 로직)
 
         let drawCount = count;
         let size = 60; 
@@ -434,28 +479,44 @@ class Player {
     }
 
     shoot() {
-        // 기본: 병사 수에 따라 발사체 개수 증가
+        // 병사 수에 따라 발사체 개수 및 패턴 결정 (최대 20000명 기준 세분화)
         let count = 1;
-        if (this.soldiers >= 10) count = 2;
-        if (this.soldiers >= 30) count = 3; // 여기서부터 대각선
-        if (this.soldiers >= 60) count = 5;
-        if (this.soldiers >= 100) count = 7;
+        
+        if (this.soldiers < 50) count = 1;
+        else if (this.soldiers < 100) count = 2;
+        else if (this.soldiers < 300) count = 3;
+        else if (this.soldiers < 600) count = 4;
+        else if (this.soldiers < 1000) count = 5;
+        else if (this.soldiers < 2000) count = 6;
+        else if (this.soldiers < 4000) count = 7;
+        else if (this.soldiers < 7000) count = 8;
+        else if (this.soldiers < 10000) count = 9;
+        else if (this.soldiers < 15000) count = 10;
+        else if (this.soldiers < 20000) count = 12;
+        else count = 15; // 20000명 이상 최대 화력
 
-        // 대각선 발사 여부 (30명 이상)
-        const useSpread = this.soldiers >= 30;
+        // 광폭화(Fever) 시 발사체 2배
+        if (feverActive) {
+            count = Math.min(20, count * 2);
+        }
+
+        // 대각선 발사 여부 (100명 이상 혹은 피버)
+        const useSpread = this.soldiers >= 100 || feverActive;
         
         for(let i=0; i<count; i++) {
             let angle = 0;
             let startX = this.x + this.width/2;
 
             if (useSpread) {
-                // 부채꼴 발사
-                const maxSpread = 0.5; // 최대 벌어지는 각도 (라디안, 약 30도)
+                // 부채꼴 발사 (병사가 많을수록 각도도 넓어짐)
+                // 최대 20000명 기준 1.2라디안까지 벌어짐
+                let spreadFactor = Math.min(1.2, 0.3 + (this.soldiers / 10000));
+                if (feverActive) spreadFactor = 1.5;
+
                 if (count > 1) {
-                    angle = -maxSpread/2 + (maxSpread / (count-1)) * i;
+                    angle = -spreadFactor/2 + (spreadFactor / (count-1)) * i;
                 }
             } else {
-                // 기존 평행 발사 (좁게)
                 const spreadX = 10;
                 const offset = (i - (count-1)/2) * spreadX;
                 startX += offset;
@@ -491,24 +552,54 @@ class Bullet {
 }
 
 class Enemy {
-    constructor(x, y, hp, packSize = 1) {
+    constructor(x, y, hp, packSize = 1, type = 'normal', hpMultiplier = 1) {
         this.width = 40;
         this.height = 40;
         this.x = x ?? Math.random() * (GAME_WIDTH - 40);
         this.y = y ?? -50;
-        this.speed = gameSpeed + Math.random() * 2;
+        this.type = type; // normal, tank, speed, zigzag, pack, boss
         
-        // 뭉친 크기 (기본 1)
+        // 속도 및 크기 설정
+        this.speed = gameSpeed + Math.random() * 2;
+        if (this.type === 'tank') {
+            this.width = 60; this.height = 60;
+            this.speed = gameSpeed * 0.8; // 느림
+        } else if (this.type === 'speed') {
+            this.speed = gameSpeed * 1.5 + 2; // 빠름
+        }
+
+        // 뭉친 크기
         this.packSize = packSize;
         
-        // 체력: 뭉친 개수 * 3 (기본 체력 3)
-        this.hp = hp ?? (3 * this.packSize);
+        // 체력 설정
+        const baseHp = 3;
+        this.hp = hp ?? (baseHp * this.packSize * hpMultiplier);
+        this.maxHp = this.hp; // 최대 체력 (보스 등 표시용)
         
         this.markedForDeletion = false;
         this.color = '#e74c3c';
+        
+        // 지그재그 이동을 위한 변수
+        this.angle = 0; 
     }
     update() {
         this.y += this.speed;
+        
+        // 패턴 이동
+        if (this.type === 'zigzag') {
+            this.x += Math.sin(this.angle) * 3;
+            this.angle += 0.1;
+            // 화면 밖 나가지 않게
+            if(this.x < 0) this.x = 0;
+            if(this.x > GAME_WIDTH - this.width) this.x = GAME_WIDTH - this.width;
+        } else if (this.type === 'boss') {
+             // 보스 움직임 (천천히 내려오다가 좌우로 왔다갔다)
+             if (this.y < 100) this.y += this.speed;
+             else {
+                 this.x += Math.sin(frameCount * 0.02) * 2;
+             }
+        }
+
         if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
     }
     draw() {
@@ -526,13 +617,26 @@ class Enemy {
 
         if (isOverlapping) ctx.globalAlpha = 0.3;
 
-        // 뭉친 적 그리기
-        if (this.packSize > 1) {
-            // 여러 마리 겹쳐서 그리기 (약간씩 오프셋)
+        // 타입별 그리기
+        if (this.type === 'tank') {
+             // 탱크형: 크게 그림
+             if (enemyImg.complete && enemyImg.naturalWidth > 0) {
+                ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+            } else {
+                ctx.fillStyle = '#c0392b'; // 더 진한 빨강
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
+            // 체력바 표시
+            ctx.fillStyle = 'red';
+            ctx.fillRect(this.x, this.y - 10, this.width, 5);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(this.x, this.y - 10, this.width * (this.hp / this.maxHp), 5);
+
+        } else if (this.packSize > 1) {
+            // 뭉친 적 그리기 (기존 로직)
             for(let i=0; i<this.packSize; i++) {
                 const offsetX = (i % 2 === 0 ? 1 : -1) * (i * 5);
                 const offsetY = (i * 5);
-                
                 if (enemyImg.complete && enemyImg.naturalWidth > 0) {
                     ctx.drawImage(enemyImg, this.x + offsetX, this.y - offsetY, this.width, this.height);
                 } else {
@@ -540,23 +644,21 @@ class Enemy {
                     ctx.fillRect(this.x + offsetX, this.y - offsetY, this.width, this.height);
                 }
             }
-            
-            // 머리 위에 남은 개수(체력 기반 대략적 수치) 표시
             ctx.fillStyle = 'white';
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
-            // 현재 남은 마리 수 = 올림(현재 체력 / 3)
             const currentPackCount = Math.ceil(this.hp / 3);
             ctx.fillText(`x${currentPackCount}`, this.x + this.width/2, this.y - 10);
 
         } else {
-            // 단일 적
+            // 일반/스피드/지그재그 적
             if (enemyImg.complete && enemyImg.naturalWidth > 0) {
                 ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
             } else {
                 ctx.fillStyle = this.color;
                 ctx.fillRect(this.x, this.y, this.width, this.height);
             }
+            // 스피드형은 색상 다르게 등 추가 가능
         }
 
         if (isOverlapping) ctx.globalAlpha = 1.0;
@@ -595,6 +697,243 @@ class Gate {
         ctx.font = '16px Malgun Gothic';
         wrapText(ctx, this.text, this.x + this.width/2, this.y + 70, this.width - 20, 20);
     }
+}
+
+// 아이템 클래스
+class Item {
+    constructor() {
+        this.width = 40;
+        this.height = 40;
+        this.x = Math.random() * (GAME_WIDTH - this.width);
+        this.y = -50;
+        this.speed = gameSpeed;
+        this.markedForDeletion = false;
+        
+        // 타입 랜덤 결정
+        const rand = Math.random();
+        if (rand < 0.3) this.type = 'shield'; // 30%
+        else if (rand < 0.6) this.type = 'fever'; // 30%
+        else if (rand < 0.8) this.type = 'bomb'; // 20%
+        else this.type = 'plus'; // 20%
+    }
+    update() {
+        this.y += this.speed;
+        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
+    }
+    draw() {
+        // 아이템 박스 그리기
+        ctx.fillStyle = '#f1c40f'; // 노란색 박스
+        ctx.fillRect(this.x, this.y, this.width, this.height);
+        ctx.strokeStyle = 'white';
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        
+        // 아이콘/텍스트
+        ctx.fillStyle = 'black';
+        ctx.font = 'bold 20px Arial';
+        ctx.textAlign = 'center';
+        let text = "?";
+        if (this.type === 'shield') text = "S"; // Shield
+        if (this.type === 'fever') text = "F"; // Fever
+        if (this.type === 'bomb') text = "B"; // Bomb
+        if (this.type === 'plus') text = "+"; // Plus
+        ctx.fillText(text, this.x + this.width/2, this.y + 27);
+    }
+}
+
+function spawnItem() {
+    // 아이템 생성 확률 대폭 하향 (0.5% -> 0.1%)
+    // 약 15~20초에 하나 정도 나오도록 조정
+    if (Math.random() < 0.001) {
+        items.push(new Item());
+    }
+}
+
+function applyItemEffect(type) {
+    if (type === 'shield') {
+        shieldActive = true;
+        shieldTimer = 300; // 5초 (60fps 기준)
+        createFloatingText("SHIELD!", player.x, player.y, "cyan");
+    } else if (type === 'fever') {
+        feverActive = true;
+        feverTimer = 300; // 5초
+        createFloatingText("FEVER!!", player.x, player.y, "orange");
+    } else if (type === 'plus') {
+        player.soldiers += 10;
+        createFloatingText("+10", player.x, player.y, "#2ecc71");
+    } else if (type === 'bomb') {
+        // 화면 내 모든 적 제거
+        enemies.forEach(e => {
+            e.markedForDeletion = true;
+            score += 10;
+            // 폭발 효과
+            for(let i=0; i<10; i++) particles.push(new Particle(e.x, e.y, '#e74c3c'));
+        });
+        createFloatingText("BOOM!", player.x, player.y, "red");
+    }
+}
+
+// 적 총알 클래스 추가
+class EnemyBullet {
+    constructor(x, y, angle, speed, type = 'normal') {
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.speed = speed;
+        this.type = type; // normal, laser
+        this.radius = type === 'laser' ? 10 : 6;
+        this.markedForDeletion = false;
+        this.color = type === 'laser' ? '#e74c3c' : '#9b59b6'; // 레이저는 빨강, 일반탄은 보라
+    }
+    update() {
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+        
+        if (this.x < 0 || this.x > GAME_WIDTH || this.y > GAME_HEIGHT || this.y < 0) {
+            this.markedForDeletion = true;
+        }
+    }
+    draw() {
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        if (this.type === 'laser') {
+            // 레이저는 길쭉하게
+            ctx.ellipse(this.x, this.y, 15, 5, this.angle, 0, Math.PI*2);
+        } else {
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+        }
+        ctx.fill();
+    }
+}
+
+// 보스 클래스 수정
+class Boss {
+    constructor() {
+        this.width = 150;
+        this.height = 120;
+        this.x = GAME_WIDTH / 2 - this.width / 2;
+        this.y = -150;
+        
+        // 보스 레벨 (등장 횟수에 따라 난이도 증가)
+        this.level = Math.floor(score / 2000) + 1;
+        
+        this.hp = 100 + (this.level * 50); // 레벨당 체력 50 증가
+        this.maxHp = this.hp;
+        this.markedForDeletion = false;
+        this.angle = 0;
+        this.attackTimer = 0;
+        this.isDashing = false; // 돌진 상태
+        this.dashTargetY = 0;
+
+        // 보스 이미지 랜덤 선택 (boss1~4 또는 alien)
+        const rand = Math.floor(Math.random() * 5); // 0~4
+        if (rand < 4) {
+            this.image = bossImgs[rand];
+        } else {
+            this.image = enemyImg; // 기존 alien.png (확대됨)
+        }
+    }
+    update() {
+        // 돌진 패턴 처리
+        if (this.isDashing) {
+            this.y += 15; // 빠르게 하강
+            if (this.y > GAME_HEIGHT) {
+                // 화면 아래로 나가면 위로 복귀
+                this.y = -200;
+                this.isDashing = false;
+            }
+            return; // 돌진 중에는 다른 움직임/공격 안함
+        }
+
+        // 등장 연출
+        if (this.y < 80) this.y += 2;
+        else {
+            // 좌우 이동 패턴 (레벨 높을수록 빠름)
+            const moveSpeed = 0.02 + (this.level * 0.005);
+            this.x += Math.sin(frameCount * moveSpeed) * (2 + this.level);
+            
+            // 화면 밖 제한
+            if(this.x < 0) this.x = 0;
+            if(this.x > GAME_WIDTH - this.width) this.x = GAME_WIDTH - this.width;
+        }
+        
+        // 보스 공격 패턴
+        this.attackTimer++;
+        
+        // 레벨에 따른 공격 주기 단축 (기본 60프레임 -> 레벨당 5프레임 감소)
+        const attackInterval = Math.max(30, 80 - (this.level * 5));
+        
+        if (this.attackTimer > attackInterval) {
+            this.attackTimer = 0;
+            this.attack();
+        }
+    }
+    
+    attack() {
+        const centerX = this.x + this.width/2;
+        const centerY = this.y + this.height;
+        
+        // 패턴 1: 조준 사격 (플레이어 방향)
+        const dx = (player.x + player.width/2) - centerX;
+        const dy = (player.y + player.height/2) - centerY;
+        const targetAngle = Math.atan2(dy, dx);
+        
+        // 기본탄 발사
+        enemies.push(new EnemyBullet(centerX, centerY, targetAngle, 5));
+        
+        // 레벨 2 이상: 부채꼴 산탄 (3발)
+        if (this.level >= 2) {
+            enemies.push(new EnemyBullet(centerX, centerY, targetAngle - 0.3, 5));
+            enemies.push(new EnemyBullet(centerX, centerY, targetAngle + 0.3, 5));
+        }
+        
+        // 레벨 3 이상: 원형 탄막 패턴 (가끔 발동)
+        if (this.level >= 3 && Math.random() < 0.3) {
+            for(let i=0; i<8; i++) {
+                const angle = (Math.PI * 2 / 8) * i;
+                enemies.push(new EnemyBullet(centerX, centerY, angle, 4));
+            }
+        }
+        
+        // 레벨 4 이상: 몸통 박치기 (돌진)
+        if (this.level >= 4 && Math.random() < 0.2) {
+             this.isDashing = true;
+             createFloatingText("DASH!", this.x + this.width/2, this.y, "red");
+        }
+        
+        // 레벨 5 이상: 고속 레이저 (빠른 탄속)
+        if (this.level >= 5 && Math.random() < 0.4) {
+             enemies.push(new EnemyBullet(centerX, centerY, targetAngle, 12, 'laser'));
+        }
+    }
+
+    draw() {
+        // 보스 외형 그리기
+        if (this.image && this.image.complete && this.image.naturalWidth > 0) {
+            ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
+        } else {
+            ctx.fillStyle = 'purple';
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+        
+        // 보스 체력바
+        ctx.fillStyle = 'black';
+        ctx.fillRect(this.x, this.y - 20, this.width, 10);
+        ctx.fillStyle = 'red';
+        ctx.fillRect(this.x, this.y - 20, this.width * (this.hp / this.maxHp), 10);
+        ctx.strokeStyle = 'white';
+        ctx.strokeRect(this.x, this.y - 20, this.width, 10);
+        
+        // 레벨 표시
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Lv.${this.level}`, this.x + this.width/2, this.y - 25);
+    }
+}
+
+function spawnBoss() {
+    boss = new Boss();
+    createFloatingText("WARNING: BOSS!", GAME_WIDTH/2 - 50, 200, "red");
 }
 
 // 텍스트 줄바꿈 (수정: 상단 문제 표시줄에도 사용 가능하도록 조정)
@@ -668,17 +1007,39 @@ function spawnGateRow() {
 }
 
 function spawnEnemy() {
-    // 기본 생성 확률 (시간 지날수록 증가)
-    if (Math.random() < 0.02 + (frameCount * 0.00001)) {
-        // 시간이 지날수록(점수가 높을수록) 뭉쳐서 나올 확률 증가
-        // 예: 1000프레임 이후부터 뭉친 적 등장 가능
+    // 적 생성 확률 조정 (너무 많이 나오지 않게 제한)
+    // 기존: 0.02 + 시간 비례 -> 수정: 최대 0.03으로 제한
+    const spawnChance = Math.min(0.03, 0.01 + (frameCount * 0.000005));
+    
+    if (Math.random() < spawnChance) {
         let packSize = 1;
-        if (frameCount > 1000 && Math.random() < 0.3) {
-            // 2~5마리 뭉침
-            packSize = Math.floor(Math.random() * 4) + 2; 
+        let hpMultiplier = 1;
+        let type = 'normal';
+
+        // 시간이 지날수록 강력한 적(체력 높음) 등장 확률 증가
+        if (frameCount > 500) {
+            const rand = Math.random();
+            if (rand < 0.2) {
+                // 탱커형 적 (체력 5배, 크기 큼)
+                type = 'tank';
+                hpMultiplier = 5;
+                packSize = 1; // 단일 개체지만 강력함
+            } else if (rand < 0.4) {
+                // 스피드형 적 (체력 낮음, 빠름)
+                type = 'speed';
+                hpMultiplier = 0.5;
+            } else if (rand < 0.6) {
+                 // 지그재그 이동 적
+                 type = 'zigzag';
+                 hpMultiplier = 1.5;
+            } else if (frameCount > 1000 && rand < 0.7) {
+                // 뭉친 적 (기존 로직 유지하되 확률 낮춤)
+                packSize = Math.floor(Math.random() * 3) + 2; 
+                type = 'pack';
+            }
         }
         
-        enemies.push(new Enemy(null, null, null, packSize));
+        enemies.push(new Enemy(null, null, null, packSize, type, hpMultiplier));
     }
 }
 
@@ -686,6 +1047,9 @@ function checkCollisions() {
     // 총알 vs 적
     bullets.forEach(bullet => {
         enemies.forEach(enemy => {
+            // 적 총알(분홍색)과는 아군 총알이 부딪히지 않게 (상쇄 효과 제거)
+            if (enemy instanceof EnemyBullet) return;
+
             const dist = Math.hypot(bullet.x - (enemy.x + 20), bullet.y - (enemy.y + 20));
             if (dist < 20 + bullet.radius) {
                 enemy.hp--;
@@ -700,22 +1064,75 @@ function checkCollisions() {
         });
     });
 
-    // 플레이어 vs 적
+    // 플레이어 vs 적 (및 적 총알)
     enemies.forEach(enemy => {
-        if (!enemy.markedForDeletion && 
-            player.x < enemy.x + enemy.width && player.x + player.width > enemy.x &&
-            player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
+        if (!enemy.markedForDeletion) {
             
-            // 충돌 시 병사 감소 (적의 남은 뭉친 수만큼 비례해서 감소)
-            // 적 1마리당 5명 감소 * 남은 팩 크기
-            const currentPackCount = Math.ceil(enemy.hp / 3);
-            const damage = 5 * currentPackCount;
+            // 적 총알인지 확인 (EnemyBullet 인스턴스 체크)
+            const isBullet = enemy instanceof EnemyBullet;
             
-            player.soldiers -= damage;
-            enemy.markedForDeletion = true;
-            createFloatingText(`-${damage}`, player.x, player.y, "red");
-            updateHUD();
-            ctx.translate(5, 0); setTimeout(() => ctx.translate(-5, 0), 50);
+            let collision = false;
+            
+            if (isBullet) {
+                // 총알 충돌 판정 (원형)
+                const dist = Math.hypot(player.x + player.width/2 - enemy.x, player.y + player.height/2 - enemy.y);
+                if (dist < (player.width/2 + enemy.radius)) {
+                    collision = true;
+                    // 적 총알과 충돌 시 이펙트 제거 (시야 방해 방지)
+                    // createFloatingText("HIT!", player.x, player.y, "orange"); 
+                }
+            } else {
+                // 일반 적 충돌 판정 (사각형)
+                if (player.x < enemy.x + enemy.width && player.x + player.width > enemy.x &&
+                    player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
+                    collision = true;
+                }
+            }
+
+            if (collision) {
+                // 보호막 있으면 피해 없음
+                if (shieldActive) {
+                    enemy.markedForDeletion = true;
+                    createFloatingText("Shield!", player.x, player.y, "cyan");
+                } else {
+                    let damage = 0;
+                    const currentLevel = Math.floor(score / 2000) + 1; // 난이도 레벨
+
+                    if (isBullet) {
+                        // 총알 데미지 (기본 데미지 대폭 상향)
+                        // 일반탄: 30, 레이저: 100
+                        let baseDamage = enemy.type === 'laser' ? 100 : 30; 
+                        
+                        // Lv 6 이상(점수 10000점 이상)부터는 비율 데미지 적용
+                        if (currentLevel > 5) {
+                            // 일반탄 10%, 레이저 30% (매우 아픔)
+                            const ratio = enemy.type === 'laser' ? 0.3 : 0.1;
+                            damage = Math.max(baseDamage, Math.floor(player.soldiers * ratio));
+                        } else {
+                            damage = baseDamage;
+                        }
+                    } else {
+                        // 몸통 박치기 데미지
+                        const currentPackCount = Math.ceil(enemy.hp / 3) || 1;
+                        // 기본 데미지 상향: 마리당 5 -> 10
+                        let baseDamage = 10 * currentPackCount;
+                        
+                        if (currentLevel > 5) {
+                            // 충돌은 매우 치명적: 기본 20% * 뭉친 수
+                            const ratio = 0.2 * currentPackCount;
+                            damage = Math.max(baseDamage, Math.floor(player.soldiers * ratio));
+                        } else {
+                            damage = baseDamage;
+                        }
+                    }
+                    
+                    player.soldiers -= damage;
+                    enemy.markedForDeletion = true;
+                    createFloatingText(`-${damage}`, player.x, player.y, "red");
+                    updateHUD();
+                    ctx.translate(5, 0); setTimeout(() => ctx.translate(-5, 0), 50);
+                }
+            }
         }
     });
 
@@ -815,6 +1232,28 @@ function animate() {
         nextGateFrame = frameCount + 400;
     }
     spawnEnemy();
+    
+    // 아이템 생성
+    spawnItem();
+    
+    // 보스 등장 체크
+    if (!boss && score >= bossSpawnScore) {
+        spawnBoss();
+        bossSpawnScore += 2000; // 다음 보스는 2000점 뒤에
+    }
+
+    // 4. 업데이트 및 그리기
+    
+    // 아이템
+    items.forEach(item => { item.update(); item.draw(); });
+    items = items.filter(item => !item.markedForDeletion);
+
+    // 보스
+    if (boss) {
+        boss.update();
+        boss.draw();
+        if (boss.markedForDeletion) boss = null;
+    }
 
     gates.forEach(g => { g.update(); g.draw(); });
     gates = gates.filter(g => !g.markedForDeletion);
@@ -841,6 +1280,72 @@ function animate() {
     });
 
     checkCollisions();
+    
+    // 아이템 획득 체크
+    items.forEach(item => {
+        if (!item.markedForDeletion && 
+            player.x < item.x + item.width && player.x + player.width > item.x &&
+            player.y < item.y + item.height && player.y + player.height > item.y) {
+            
+            item.markedForDeletion = true;
+            applyItemEffect(item.type);
+        }
+    });
+
+    // 보스 충돌 체크
+    if (boss) {
+        // 총알 vs 보스
+        bullets.forEach(bullet => {
+            if (bullet.x > boss.x && bullet.x < boss.x + boss.width &&
+                bullet.y > boss.y && bullet.y < boss.y + boss.height) {
+                
+                boss.hp--;
+                bullet.markedForDeletion = true;
+                // 보스 피격 이펙트 (복구)
+                for(let i=0; i<5; i++) particles.push(new Particle(bullet.x, bullet.y, '#f1c40f'));
+                
+                if (boss.hp <= 0) {
+                    boss.markedForDeletion = true;
+                    score += 500; // 보스 처치 점수
+                    createFloatingText("BOSS CLEARED!", boss.x + boss.width/2, boss.y, "#f1c40f");
+                    // 대량 폭발 효과
+                    for(let i=0; i<50; i++) particles.push(new Particle(boss.x + Math.random()*boss.width, boss.y + Math.random()*boss.height, '#e74c3c'));
+                }
+            }
+        });
+
+        // 플레이어 vs 보스 (충돌 시 큰 피해)
+        if (!boss.markedForDeletion && 
+            player.x < boss.x + boss.width && player.x + player.width > boss.x &&
+            player.y < boss.y + boss.height && player.y + player.height > boss.y) {
+            
+            if (!shieldActive) {
+                // 보스 몸통 박치기 데미지 계산
+                let damage = 0;
+                const currentLevel = Math.floor(score / 2000) + 1;
+
+                if (boss.isDashing) {
+                    // 돌진 중일 때는 큰 피해 (한 번에 쾅!)
+                    if (currentLevel > 5) {
+                        // 고레벨: 병사의 50% 즉시 삭제 (절반이 날아감)
+                        damage = Math.max(300, Math.floor(player.soldiers * 0.5));
+                    } else {
+                        // 저레벨: 300명 감소
+                        damage = 300;
+                    }
+                    
+                    // 플레이어 넉백
+                    ctx.translate(10, 10); setTimeout(() => ctx.translate(-10, -10), 50);
+                    createFloatingText("CRITICAL!", player.x, player.y, "red");
+                    
+                    player.soldiers -= damage; 
+                    createFloatingText(`-${damage}`, player.x, player.y, "red");
+                } 
+                // 일반 접촉(비비기) 코드는 제거됨 (데미지 없음)
+            }
+        }
+    }
+
     drawUI();
     
     // 점수 증가 (생존 점수)
@@ -949,23 +1454,25 @@ function returnToMain() {
     initStartScreen();
 }
 
-// 기록 보기
-function showRecords() {
-    const records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
-    const tbody = document.querySelector('#records-table tbody');
-    tbody.innerHTML = '';
-    
-    if(records.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4">기록이 없습니다.</td></tr>';
-    } else {
-        records.forEach((rec, idx) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `<td>${idx+1}</td><td>${rec.name}</td><td>${rec.score}</td><td>${rec.correct}</td>`;
-            tbody.appendChild(tr);
-        });
+    // 기록 보기
+    function showRecords() {
+        const records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+        const tbody = document.querySelector('#records-table tbody');
+        tbody.innerHTML = '';
+        
+        if(records.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5">기록이 없습니다.</td></tr>';
+        } else {
+            records.forEach((rec, idx) => {
+                const tr = document.createElement('tr');
+                // maxCombo가 없는 구버전 기록 호환성 처리
+                const combo = rec.maxCombo !== undefined ? rec.maxCombo : '-';
+                tr.innerHTML = `<td>${idx+1}</td><td>${rec.name}</td><td>${rec.score}</td><td>${rec.correct}</td><td>${combo}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+        document.getElementById('records-screen').classList.remove('hidden');
     }
-    document.getElementById('records-screen').classList.remove('hidden');
-}
 function hideRecords() {
     document.getElementById('records-screen').classList.add('hidden');
 }
