@@ -112,7 +112,7 @@
 
     <!-- HUD -->
     <div id="hud" class="hidden">
-        <div class="stat-item">거리: <span id="hud-score">0</span></div>
+        <div class="stat-item">점수: <span id="hud-score">0</span></div>
         <div class="stat-item">정답: <span id="hud-total">0</span></div>
         <div class="stat-item combo-text" id="hud-combo">Combo: 0</div>
     </div>
@@ -289,7 +289,7 @@ const QUESTIONS = [
 let gameState = 'START'; // START, PLAYING, PAUSED, GAMEOVER
 let frameCount = 0;
 let score = 0;
-let gameSpeed = 3;
+let gameSpeed = 1.5;
 
 // 통계 변수
 let nickname = "학생";
@@ -434,26 +434,53 @@ class Player {
     }
 
     shoot() {
-        const bulletCount = Math.min(5, 1 + Math.floor(this.soldiers / 20));
-        const spread = 10;
-        for(let i=0; i<bulletCount; i++) {
-            const offset = (i - (bulletCount-1)/2) * spread;
-            bullets.push(new Bullet(this.x + this.width/2 + offset, this.y));
+        // 기본: 병사 수에 따라 발사체 개수 증가
+        let count = 1;
+        if (this.soldiers >= 10) count = 2;
+        if (this.soldiers >= 30) count = 3; // 여기서부터 대각선
+        if (this.soldiers >= 60) count = 5;
+        if (this.soldiers >= 100) count = 7;
+
+        // 대각선 발사 여부 (30명 이상)
+        const useSpread = this.soldiers >= 30;
+        
+        for(let i=0; i<count; i++) {
+            let angle = 0;
+            let startX = this.x + this.width/2;
+
+            if (useSpread) {
+                // 부채꼴 발사
+                const maxSpread = 0.5; // 최대 벌어지는 각도 (라디안, 약 30도)
+                if (count > 1) {
+                    angle = -maxSpread/2 + (maxSpread / (count-1)) * i;
+                }
+            } else {
+                // 기존 평행 발사 (좁게)
+                const spreadX = 10;
+                const offset = (i - (count-1)/2) * spreadX;
+                startX += offset;
+            }
+            
+            bullets.push(new Bullet(startX, this.y, angle));
         }
     }
 }
 
 class Bullet {
-    constructor(x, y) {
+    constructor(x, y, angle = 0) {
         this.x = x;
         this.y = y;
+        this.angle = angle;
         this.radius = 4;
         this.speed = 10;
         this.markedForDeletion = false;
     }
     update() {
-        this.y -= this.speed;
-        if (this.y < 0) this.markedForDeletion = true;
+        // angle이 0이면 위로(y 감소), 양수면 오른쪽 기울기, 음수면 왼쪽 기울기
+        this.x += Math.sin(this.angle) * this.speed;
+        this.y -= Math.cos(this.angle) * this.speed;
+        
+        if (this.y < 0 || this.x < 0 || this.x > GAME_WIDTH) this.markedForDeletion = true;
     }
     draw() {
         ctx.fillStyle = '#f1c40f';
@@ -464,13 +491,19 @@ class Bullet {
 }
 
 class Enemy {
-    constructor(x, y, hp) {
+    constructor(x, y, hp, packSize = 1) {
         this.width = 40;
         this.height = 40;
         this.x = x ?? Math.random() * (GAME_WIDTH - 40);
         this.y = y ?? -50;
         this.speed = gameSpeed + Math.random() * 2;
-        this.hp = hp ?? 3;
+        
+        // 뭉친 크기 (기본 1)
+        this.packSize = packSize;
+        
+        // 체력: 뭉친 개수 * 3 (기본 체력 3)
+        this.hp = hp ?? (3 * this.packSize);
+        
         this.markedForDeletion = false;
         this.color = '#e74c3c';
     }
@@ -479,11 +512,37 @@ class Enemy {
         if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
     }
     draw() {
-        if (enemyImg.complete && enemyImg.naturalWidth > 0) {
-            ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+        // 뭉친 적 그리기
+        if (this.packSize > 1) {
+            // 여러 마리 겹쳐서 그리기 (약간씩 오프셋)
+            for(let i=0; i<this.packSize; i++) {
+                const offsetX = (i % 2 === 0 ? 1 : -1) * (i * 5);
+                const offsetY = (i * 5);
+                
+                if (enemyImg.complete && enemyImg.naturalWidth > 0) {
+                    ctx.drawImage(enemyImg, this.x + offsetX, this.y - offsetY, this.width, this.height);
+                } else {
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(this.x + offsetX, this.y - offsetY, this.width, this.height);
+                }
+            }
+            
+            // 머리 위에 남은 개수(체력 기반 대략적 수치) 표시
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 14px Arial';
+            ctx.textAlign = 'center';
+            // 현재 남은 마리 수 = 올림(현재 체력 / 3)
+            const currentPackCount = Math.ceil(this.hp / 3);
+            ctx.fillText(`x${currentPackCount}`, this.x + this.width/2, this.y - 10);
+
         } else {
-            ctx.fillStyle = this.color;
-            ctx.fillRect(this.x, this.y, this.width, this.height);
+            // 단일 적
+            if (enemyImg.complete && enemyImg.naturalWidth > 0) {
+                ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+            } else {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+            }
         }
     }
 }
@@ -593,8 +652,17 @@ function spawnGateRow() {
 }
 
 function spawnEnemy() {
+    // 기본 생성 확률 (시간 지날수록 증가)
     if (Math.random() < 0.02 + (frameCount * 0.00001)) {
-        enemies.push(new Enemy());
+        // 시간이 지날수록(점수가 높을수록) 뭉쳐서 나올 확률 증가
+        // 예: 1000프레임 이후부터 뭉친 적 등장 가능
+        let packSize = 1;
+        if (frameCount > 1000 && Math.random() < 0.3) {
+            // 2~5마리 뭉침
+            packSize = Math.floor(Math.random() * 4) + 2; 
+        }
+        
+        enemies.push(new Enemy(null, null, null, packSize));
     }
 }
 
@@ -622,10 +690,14 @@ function checkCollisions() {
             player.x < enemy.x + enemy.width && player.x + player.width > enemy.x &&
             player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
             
-            player.soldiers -= 5;
+            // 충돌 시 병사 감소 (적의 남은 뭉친 수만큼 비례해서 감소)
+            // 적 1마리당 5명 감소 * 남은 팩 크기
+            const currentPackCount = Math.ceil(enemy.hp / 3);
+            const damage = 5 * currentPackCount;
+            
+            player.soldiers -= damage;
             enemy.markedForDeletion = true;
-            createFloatingText("-5", player.x, player.y, "red");
-            consecutiveCorrect = 0; // 콤보 초기화
+            createFloatingText(`-${damage}`, player.x, player.y, "red");
             updateHUD();
             ctx.translate(5, 0); setTimeout(() => ctx.translate(-5, 0), 50);
         }
@@ -645,7 +717,7 @@ function checkCollisions() {
                 consecutiveCorrect++;
                 if(consecutiveCorrect > maxCombo) maxCombo = consecutiveCorrect;
 
-                createFloatingText("Correct!", player.x, player.y - 50, "#2ecc71");
+                createFloatingText("정답!", player.x, player.y - 50, "#2ecc71");
                 score += 100;
                 
                 // 콤보 효과
@@ -657,7 +729,7 @@ function checkCollisions() {
             } else {
                 player.soldiers = Math.floor(player.soldiers / 2);
                 consecutiveCorrect = 0;
-                createFloatingText("Wrong...", player.x, player.y - 50, "#e74c3c");
+                createFloatingText("틀렸어!", player.x, player.y - 50, "#e74c3c");
             }
 
             gates.forEach(g => { if (Math.abs(g.y - gate.y) < 10) g.passed = true; });
@@ -758,6 +830,11 @@ function animate() {
     // 점수 증가 (생존 점수)
     score += 0.1;
     if(frameCount % 10 === 0) updateHUD(); // HUD 업데이트
+
+    // [추가] 속도 점진적 증가 (최대 2.0까지)
+    if (gameSpeed < 2.0) {
+        gameSpeed += 0.0002; 
+    }
 
     frameCount++;
     requestAnimationFrame(animate);
