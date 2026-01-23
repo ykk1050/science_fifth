@@ -1,0 +1,918 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>초등학교 5학년 과학 서바이벌</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #2c3e50;
+            font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+            touch-action: none;
+        }
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #95a5a6;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        /* UI 레이어 */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        /* 공통 팝업 스타일 */
+        .popup {
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px;
+            border-radius: 15px;
+            text-align: center;
+            color: white;
+            pointer-events: auto;
+            border: 2px solid #3498db;
+            max-width: 90%;
+            width: 400px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+        }
+        h1 { margin: 0 0 20px 0; color: #3498db; text-shadow: 2px 2px 0 #000; font-size: 2rem; }
+        h2 { color: #f1c40f; margin-bottom: 15px; }
+        p { font-size: 1.1rem; line-height: 1.5; margin: 10px 0; }
+        
+        /* 입력 필드 */
+        input[type="text"] {
+            padding: 10px;
+            font-size: 1.2rem;
+            border-radius: 5px;
+            border: none;
+            width: 70%;
+            text-align: center;
+            margin-bottom: 15px;
+        }
+
+        /* 버튼 스타일 */
+        button {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            font-size: 1.2rem;
+            border-radius: 50px;
+            cursor: pointer;
+            margin: 10px 5px;
+            transition: transform 0.1s, background 0.2s;
+            font-weight: bold;
+            font-family: inherit;
+        }
+        button:hover { transform: scale(1.05); background: #c0392b; }
+        button:active { transform: scale(0.95); }
+        button.secondary { background: #34495e; border: 1px solid #7f8c8d; }
+        button.secondary:hover { background: #2c3e50; }
+        button.green { background: #27ae60; }
+        button.green:hover { background: #219150; }
+
+        .hidden { display: none !important; }
+
+        /* 기록 테이블 */
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th, td { padding: 8px; border-bottom: 1px solid #555; }
+        th { color: #3498db; }
+        tr:nth-child(1) td { color: #f1c40f; font-weight: bold; } /* 1등 강조 */
+
+        /* HUD (게임 중 상단 표시) */
+        #hud {
+            position: absolute;
+            top: 90px; /* 상단 문제 표시줄 아래 */
+            right: 10px;
+            text-align: right;
+            color: white;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px black;
+            pointer-events: none;
+            font-size: 1.0rem;
+        }
+        .stat-item { margin-bottom: 5px; }
+        .combo-text { color: #f1c40f; font-size: 1.2rem; transition: transform 0.1s; }
+        .combo-active { transform: scale(1.2); }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+        <div class="stat-item">거리: <span id="hud-score">0</span></div>
+        <div class="stat-item">정답: <span id="hud-total">0</span></div>
+        <div class="stat-item combo-text" id="hud-combo">Combo: 0</div>
+    </div>
+
+    <div id="ui-layer">
+        <!-- 시작 화면 -->
+        <div id="start-screen" class="popup">
+            <h1>🌤️ 과학 서바이벌</h1>
+            <p>초등학교 5학년 과학 총정리</p>
+            
+            <input type="text" id="nickname-input" placeholder="닉네임을 입력하세요" maxlength="8">
+            
+            <div id="resume-area" class="hidden">
+                <p style="color: #f39c12;">저장된 게임이 있습니다!</p>
+                <button class="green" onclick="loadGameAndStart()">이어하기</button>
+            </div>
+
+            <div>
+                <button onclick="startNewGame()">새 게임 시작</button>
+                <button class="secondary" onclick="showRecords()">기록 보기</button>
+            </div>
+        </div>
+
+        <!-- 기록 화면 -->
+        <div id="records-screen" class="popup hidden">
+            <h2>🏆 명예의 전당</h2>
+            <div style="max-height: 200px; overflow-y: auto;">
+                <table id="records-table">
+                    <thead>
+                        <tr><th>순위</th><th>이름</th><th>점수</th><th>정답</th></tr>
+                    </thead>
+                    <tbody><!-- JS로 채움 --></tbody>
+                </table>
+            </div>
+            <button class="secondary" onclick="hideRecords()">닫기</button>
+        </div>
+
+        <!-- 게임 오버 화면 -->
+        <div id="game-over-screen" class="popup hidden">
+            <h1>게임 오버</h1>
+            <p id="final-msg">수고했습니다!</p>
+            <p id="final-score-text">점수: 0</p>
+            <p id="final-stats-text">총 정답: 0 / 최대 콤보: 0</p>
+            <button onclick="returnToMain()">메인으로</button>
+        </div>
+    </div>
+
+<script>
+/**
+ * 1. 설정 및 리소스
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let GAME_WIDTH = window.innerWidth > 600 ? 600 : window.innerWidth;
+let GAME_HEIGHT = window.innerHeight;
+canvas.width = GAME_WIDTH;
+canvas.height = GAME_HEIGHT;
+
+const playerImg = new Image();
+playerImg.src = 'spaceship.png';
+const enemyImg = new Image();
+enemyImg.src = 'alien.png';
+
+// 문제 데이터 (전체 포함)
+const QUESTIONS = [
+    // [날씨와 우리 생활]
+    { q: "습도는 무엇을 의미하나요?", a: "공기 중 수증기의 양", w: ["공기의 온도", "바람의 세기"] },
+    { q: "이슬이나 안개는 수증기가 무엇이 된 것인가요?", a: "물방울", w: ["얼음", "눈"] },
+    { q: "바람은 공기가 어디로 이동하는 것인가요?", a: "고기압 → 저기압", w: ["저기압 → 고기압", "고기압 → 고기압"] },
+    { q: "우리나라 여름철 날씨에 영향을 주는 기단은?", a: "북태평양 (고온다습)", w: ["시베리아 (한랭건조)", "오호츠크해 (한랭다습)"] },
+    { q: "하루 중 기온이 가장 높은 때는?", a: "오후 2~3시경", w: ["정오 (12시)", "해 질 무렵"] },
+    { q: "지면이 데워져 공기가 위로 올라가는 현상은?", a: "대류 현상", w: ["복사 현상", "전도 현상"] },
+    { q: "비가 내리는 양을 측정하는 기구는?", a: "우량계", w: ["풍향계", "습도계"] },
+    { q: "공기의 무게로 인해 생기는 압력은?", a: "기압", w: ["수압", "혈압"] },
+    { q: "공기의 습도를 측정하는 도구는?", a: "건습구 온도계", w: ["온도계", "기압계"] },
+    { q: "건구와 습구 온도의 차이가 없을 때 습도는?", a: "100%", w: ["0%", "50%"] },
+    { q: "수증기가 차가운 물체 표면에 맺혀 물방울이 된 것은?", a: "이슬", w: ["안개", "구름"] },
+    { q: "공기 중 수증기가 응결하여 지표면 근처에서 뿌옇게 보이는 현상은?", a: "안개", w: ["이슬", "구름"] },
+    { q: "공기 덩어리가 하늘 높이 올라가 물방울이나 얼음 알갱이가 된 것은?", a: "구름", w: ["이슬", "안개"] },
+    { q: "주변보다 공기의 압력이 높은 곳은?", a: "고기압", w: ["저기압", "무기압"] },
+    { q: "낮에 바다에서 육지로 부는 바람은?", a: "해풍", w: ["육풍", "계절풍"] },
+    { q: "밤에 육지에서 바다로 부는 바람은?", a: "육풍", w: ["해풍", "돌풍"] },
+    { q: "우리나라 여름철 날씨에 영향을 주는 기단의 성질은?", a: "덥고 습하다", w: ["차고 건조하다", "따뜻하고 건조하다"] },
+    { q: "겨울철 차갑고 건조한 바람을 보내는 기단은?", a: "시베리아 기단", w: ["북태평양 기단", "오호츠크해 기단"] },
+    { q: "고기압 지역의 날씨는 대체로 어떠한가요?", a: "맑다", w: ["흐리다", "비가 온다"] },
+    { q: "햇빛이 오랫동안 내리쬐어서 온도가 높은 야외와 에어컨을 틀어놓은 실내 중 어느 곳의 기압이 더 높을까?", a: "실내", w: ["야외", "기압이 같다"] },
+
+    // [온도와 열]
+    { q: "고체에서 열이 온도가 높은 곳에서 낮은 곳으로 이동하는 현상은?", a: "전도", w: ["대류", "단열"] },
+    { q: "금속 막대의 한쪽 끝을 가열하면 열은 어떻게 이동할까요?", a: "가열한 곳에서 멀어지는 방향으로 이동", w: ["가열한 부분에만 머문다", "온도가 낮은 곳에서 높은 곳으로 이동"] },
+    { q: "액체나 기체에서 온도가 높아진 물질이 위로 올라가는 열의 이동 방식은?", a: "대류", w: ["전도", "복사"] },
+    { q: "주전자 속의 물이 전체적으로 따뜻해지는 이유는 무엇 때문일까요?", a: "대류", w: ["전도", "단열"] },
+    { q: "열의 이동을 막아 온도를 유지하는 것을 무엇이라고 하나요?", a: "단열", w: ["전도", "대류"] },
+    { q: "보온병의 벽을 이중으로 만들고 그 사이를 비우는 목적은?", a: "열의 이동을 막기 위해", w: ["무게를 가볍게 하기 위해", "모양을 예쁘게 만들기 위해"] },
+    { q: "다음 중 전도가 가장 잘 일어나는 물질은?", a: "구리", w: ["나무", "유리"] },
+
+    // [태양계와 별]
+    { q: "스스로 빛을 내는 태양계의 유일한 별은?", a: "태양", w: ["지구", "달"] },
+    { q: "태양계 행성 중 태양에서 가장 가까운 행성은?", a: "수성", w: ["금성", "지구"] },
+    { q: "태양계 행성 중 크기가 가장 큰 행성은?", a: "목성", w: ["토성", "천왕성"] },
+    { q: "태양에서 행성까지의 거리를 비교할 때 가장 멀리 있는 행성은?", a: "해왕성", w: ["화성", "토성"] },
+    { q: "북쪽 하늘에서 위치가 거의 변하지 않아 방향의 기준이 되는 별은?", a: "북극성", w: ["시리우스", "견우성"] },
+    { q: "북극성을 찾기 위해 이용하는 국자 모양의 별자리는?", a: "북두칠성", w: ["사자자리", "오리온자리"] },
+    { q: "별과 행성의 차이점 중 맞는 것은?", a: "별은 스스로 빛을 내지만 행성은 그렇지 못하다", w: ["행성이 스스로 빛을 낸다", "둘 다 스스로 빛을 낸다"] },
+    { q: "카시오페이아자리는 어떤 모양인가요?", a: "'W'자 모양", w: ["국자 모양", "사자 모양"] },
+    { q: "밤하늘에서 며칠 동안 관찰했을 때 위치가 변하는 천체는?", a: "행성", w: ["별", "별자리"] },
+
+    // [용해와 용액]
+    { q: "설탕이 물에 녹아 섞이는 현상을 무엇이라고 하나요?", a: "용해", w: ["융해", "응고"] },
+    { q: "설탕물에서 설탕처럼 녹는 물질을 무엇이라고 하나요?", a: "용질", w: ["용매", "용액"] },
+    { q: "설탕물에서 물처럼 녹이는 물질을 무엇이라고 하나요?", a: "용매", w: ["용질", "용액"] },
+    { q: "설탕물을 다 만들었을 때, 설탕과 물이 고르게 섞인 상태를 무엇이라 하나요?", a: "용액", w: ["용질", "용매"] },
+    { q: "투명한 두 설탕물의 진하기를 비교하는 방법으로 옳은 것은?", a: "맛을 보거나 물체를 띄워 비교한다", w: ["빛을 비추어 본다", "냄새를 맡아 비교한다"] },
+    { q: "일정한 양의 물에 소금을 계속 넣으면 어떻게 되나요?", a: "어느 정도 녹다가 더 이상 녹지 않는다", w: ["끝없이 녹는다", "물이 사라진다"] },
+    { q: "소금을 더 많이 녹이려면 물을 어떻게 해야 하나요?", a: "물의 온도를 높인다", w: ["물의 양을 줄인다", "부채로 바람을 일으킨다"] },
+    { q: "2가지 설탕물에 방울토마토를 넣었을 때 방울토마토가 더 높이 떠오른 설탕물은?", a: "더 진하다", w: ["더 연하다", "알 수 없다"] },
+
+    // [다양한 생물과 우리 생활]
+    { q: "눈에 보이지 않는 작은 생물을 관찰할 때 사용하는 도구는?", a: "광학 현미경", w: ["망원경", "돋보기"] },
+    { q: "곰팡이나 버섯처럼 포자로 번식하는 생물 무리는?", a: "균류", w: ["원생 생물", "식물"] },
+    { q: "물속에 살며 몸이 초록색 선 모양인 원생 생물은?", a: "해캄", w: ["짚신벌레", "세균"] },
+    { q: "짚신 모양을 닮았으며 스스로 움직이는 원생 생물은?", a: "짚신벌레", w: ["해캄", "곰팡이"] },
+    { q: "균류가 잘 자라는 환경은?", a: "따뜻하고 습기가 많은 곳", w: ["건조한 곳", "햇빛이 강한 곳"] },
+    { q: "우리 주변 어디에나 있으며 조건에 맞으면 수가 빠르게 늘어나는 구조가 단순한 생물은?", a: "세균", w: ["균류", "동물"] },
+    { q: "유산균처럼 우리 생활에 도움을 주는 세균의 역할은?", a: "음식 발효", w: ["질병 유발", "음식 부패"] },
+    { q: "곰팡이가 우리에게 주는 해로운 점은?", a: "음식 부패", w: ["산소 공급", "영양분 생성"] },
+    { q: "원생 생물에 대한 설명으로 옳은 것은?", a: "주로 물기가 있는 곳에 산다", w: ["식물과 똑같다", "눈으로 쉽게 보인다"] },
+    { q: "원생 생물에 대한 설명으로 옳은 것은?", a: "동물도 식물도 균류도 아니다", w: ["동물이다", "균류이다"] },
+
+    // [생물과 환경]
+    { q: "생태계에서 햇빛으로 양분을 직접 만드는 생물은?", a: "생산자", w: ["소비자", "분해자"] },
+    { q: "다른 생물을 먹이로 하여 양분을 얻는 생물은?", a: "소비자", w: ["생산자", "분해자"] },
+    { q: "죽은 생물을 분해하여 양분을 얻는 생물은?", a: "분해자", w: ["생산자", "소비자"] },
+    { q: "생물 주변의 햇빛, 물, 온도 등을 무엇이라 하나요?", a: "비생물 요소", w: ["생물 요소", "사회적 요소"] },
+    { q: "먹고 먹히는 관계가 사슬처럼 연결된 것은?", a: "먹이사슬", w: ["먹이그물", "먹이피라미드"] },
+    { q: "여러 개의 먹이사슬이 그물처럼 복잡하게 연결된 것은?", a: "먹이그물", w: ["먹이사슬", "생물 농축"] },
+    { q: "생태계 내에서 생물의 종류와 수가 일정하게 유지되는 상태는?", a: "생태계 평형", w: ["생태계 파괴", "생물 다양성"] },
+    { q: "생물이 환경에 맞게 몸의 형태나 습성이 변하는 것은?", a: "적응", w: ["이동", "탄생"] },
+    { q: "곰팡이나 세균은 생태계에서 어떤 역할을 하나요?", a: "분해자", w: ["생산자", "소비자"] },
+    { q: "비생물 요소(온도)가 생물에 영향을 주는 사례는?", a: "철새의 이동", w: ["지렁이가 흙을 일구는 것", "숲이 공기를 맑게 하는 것"] },
+
+    // [물체의 운동]
+    { q: "단위 시간 동안 이동한 거리를 무엇이라고 하나요?", a: "속력", w: ["시간", "거리"] },
+    { q: "같은 거리를 이동할 때, 걸린 시간이 짧을수록 빠르기는?", a: "더 빠르다", w: ["더 느리다", "같다"] },
+    { q: "같은 시간 동안 이동할 때, 이동 거리가 길수록 빠르기는?", a: "더 빠르다", w: ["더 느리다", "같다"] },
+    { q: "속력을 구하는 올바른 방법은?", a: "거리 ÷ 시간", w: ["시간 ÷ 거리", "거리 × 시간"] },
+    { q: "1시간 동안 30km 움직이는 물체의 속력은?", a: "30km/h", w: ["30km/s", "30km/m"] },
+    { q: "1초 동안 30km 움직이는 물체의 속력은?", a: "30km/s", w: ["30km/h", "30km/m"] },
+    { q: "1분 동안 30km 움직이는 물체의 속력은?", a: "30km/m", w: ["30km/s", "30km/h"] },
+    { q: "10초 동안 100m를 달린 사람의 속력은?", a: "10m/s", w: ["1m/s", "100m/s"] },
+    { q: "빠르기가 일정한 운동의 예는?", a: "에스컬레이터", w: ["떨어지는 공", "출발하는 기차"] },
+    { q: "빠르기가 변하는 운동의 예는?", a: "날아가는 축구공", w: ["대관람차", "컨베이어 벨트"] },
+    { q: "100m 달리기 기록이 A는 15초, B는 20초라면 누가 더 빠른가요?", a: "A", w: ["B", "똑같다"] },
+
+    // [산과 염기]
+    { q: "용액의 성질에 따라 색깔이 변하는 물질은?", a: "지시약", w: ["용매", "용질"] },
+    { q: "푸른색 리트머스 종이를 붉게 변화시키는 용액은?", a: "산성 용액", w: ["염기성 용액", "중성 용액"] },
+    { q: "페놀프탈레인 용액을 붉게 변화시키는 용액은?", a: "염기성 용액", w: ["산성 용액", "중성 용액"] },
+    { q: "다음 중 대표적인 산성 용액은?", a: "식초", w: ["비눗물", "석회수"] },
+    { q: "다음 중 대표적인 염기성 용액은?", a: "비눗물", w: ["레몬즙", "사이다"] },
+    { q: "산성 용액에 달걀 껍데기를 넣으면 어떤 변화가 생기나요?", a: "기포가 발생하며 녹는다", w: ["변화 없다", "딱딱해진다"] },
+    { q: "염기성 용액의 공통적인 특징은?", a: "두부나 계란 흰자 같은 물질을 녹인다", w: ["신맛이 난다", "금속을 녹인다"] },
+    { q: "산성 용액과 염기성 용액을 섞으면 어떻게 되나요?", a: "각 용액의 성질이 약해진다", w: ["성질이 더 강해진다", "아무 변화 없다"] },
+    { q: "생선 비린내(염기성)에 레몬즙을 뿌리는 이유는?", a: "산성으로 중화하려고", w: ["더 비리게 하려고", "맛을 없애려고"] },
+    { q: "자주색 양배추 지시약이 붉은색으로 변했다면 그 용액은?", a: "산성", w: ["염기성", "중성"] },
+    { q: "속이 쓰릴 때 먹는 제산제는 어떤 성질일까요?", a: "염기성", w: ["산성", "중성"] },
+    { q: "산성 용액에 대리석 조각을 넣으면 어떻게 되나요?", a: "대리석이 녹는다", w: ["대리석이 커진다", "변화 없다"] }
+];
+
+/**
+ * 2. 게임 상태 변수
+ */
+let gameState = 'START'; // START, PLAYING, PAUSED, GAMEOVER
+let frameCount = 0;
+let score = 0;
+let gameSpeed = 3;
+
+// 통계 변수
+let nickname = "학생";
+let totalCorrect = 0;
+let consecutiveCorrect = 0;
+let maxCombo = 0;
+
+// 객체 배열
+let bullets = [];
+let enemies = [];
+let gates = [];
+let particles = [];
+let floatingTexts = [];
+
+// 문제 및 스폰 제어
+let currentQuestionObj = null;
+let nextGateFrame = 0;
+let player;
+let targetX;
+
+/**
+ * 3. 유틸리티 함수 (셔플, 저장 등)
+ */
+// 배열 섞기 (Fisher-Yates)
+function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+// 로컬 스토리지 키
+const SAVE_KEY = 'weatherRun_save_v2';
+const RECORD_KEY = 'weatherRun_records_v2';
+
+// 게임 저장
+function saveGame() {
+    if (gameState !== 'PLAYING' && gameState !== 'PAUSED') return;
+    
+    const saveData = {
+        score, totalCorrect, consecutiveCorrect, maxCombo, nickname, frameCount, nextGateFrame,
+        player: { x: player.x, y: player.y, soldiers: player.soldiers },
+        enemies: enemies.map(e => ({x: e.x, y: e.y, hp: e.hp})),
+        gates: gates.map(g => ({x: g.x, y: g.y, width: g.width, text: g.text, isCorrect: g.isCorrect, passed: g.passed})),
+        currentQuestionObj
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(saveData));
+}
+
+// 저장된 게임 확인
+function checkSavedGame() {
+    return localStorage.getItem(SAVE_KEY) !== null;
+}
+
+// 게임 기록 저장
+function saveRecord() {
+    let records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+    records.push({
+        name: nickname,
+        score: Math.floor(score),
+        correct: totalCorrect,
+        date: new Date().toLocaleDateString()
+    });
+    // 점수 내림차순 정렬
+    records.sort((a, b) => b.score - a.score);
+    // 상위 10개만 유지
+    records = records.slice(0, 10);
+    localStorage.setItem(RECORD_KEY, JSON.stringify(records));
+}
+
+/**
+ * 4. 클래스 정의
+ */
+class Player {
+    constructor(x, y, soldiers) {
+        this.width = 40;
+        this.height = 40;
+        this.x = x ?? (GAME_WIDTH / 2 - 20);
+        this.y = y ?? (GAME_HEIGHT - 150);
+        this.soldiers = soldiers ?? 10;
+        this.color = '#3498db';
+        this.lastShotTime = 0;
+    }
+
+    update() {
+        if (this.soldiers <= 0) endGame();
+
+        // 발사 속도
+        const fireRate = Math.max(100, 500 - (this.soldiers * 2));
+        const now = Date.now();
+        if (now - this.lastShotTime > fireRate) {
+            this.shoot();
+            this.lastShotTime = now;
+        }
+    }
+
+    draw() {
+        const count = Math.floor(this.soldiers);
+        const maxIndividualDraw = 30; 
+        const cx = this.x + this.width / 2;
+        const cy = this.y + this.height / 2;
+
+        let drawCount = count;
+        let size = 60; 
+
+        if (count <= maxIndividualDraw) {
+            size = 70 / Math.sqrt(count);
+            if(size > 60) size = 60;
+            if(size < 20) size = 20;
+        } else {
+            drawCount = maxIndividualDraw;
+            size = 20;
+        }
+
+        for(let i=0; i<drawCount; i++) {
+             const angle = i * 2.4; 
+             const dist = 7 * Math.sqrt(i);
+             const rot = frameCount * 0.02;
+             const dx = Math.cos(angle + rot) * dist;
+             const dy = Math.sin(angle + rot) * dist;
+
+             if (playerImg.complete && playerImg.naturalWidth > 0) {
+                 ctx.drawImage(playerImg, cx + dx - size/2, cy + dy - size/2, size, size);
+             } else {
+                 ctx.fillStyle = this.color;
+                 ctx.beginPath();
+                 ctx.arc(cx + dx, cy + dy, size/2, 0, Math.PI*2);
+                 ctx.fill();
+             }
+        }
+
+        if (count > maxIndividualDraw) {
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 30px Arial';
+            ctx.textAlign = 'center';
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 4;
+            ctx.strokeText(count, cx, cy - 50);
+            ctx.fillText(count, cx, cy - 50);
+        }
+    }
+
+    shoot() {
+        const bulletCount = Math.min(5, 1 + Math.floor(this.soldiers / 20));
+        const spread = 10;
+        for(let i=0; i<bulletCount; i++) {
+            const offset = (i - (bulletCount-1)/2) * spread;
+            bullets.push(new Bullet(this.x + this.width/2 + offset, this.y));
+        }
+    }
+}
+
+class Bullet {
+    constructor(x, y) {
+        this.x = x;
+        this.y = y;
+        this.radius = 4;
+        this.speed = 10;
+        this.markedForDeletion = false;
+    }
+    update() {
+        this.y -= this.speed;
+        if (this.y < 0) this.markedForDeletion = true;
+    }
+    draw() {
+        ctx.fillStyle = '#f1c40f';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+class Enemy {
+    constructor(x, y, hp) {
+        this.width = 40;
+        this.height = 40;
+        this.x = x ?? Math.random() * (GAME_WIDTH - 40);
+        this.y = y ?? -50;
+        this.speed = gameSpeed + Math.random() * 2;
+        this.hp = hp ?? 3;
+        this.markedForDeletion = false;
+        this.color = '#e74c3c';
+    }
+    update() {
+        this.y += this.speed;
+        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
+    }
+    draw() {
+        if (enemyImg.complete && enemyImg.naturalWidth > 0) {
+            ctx.drawImage(enemyImg, this.x, this.y, this.width, this.height);
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+        }
+    }
+}
+
+class Gate {
+    constructor(x, width, text, isCorrect, passed, y) {
+        this.x = x;
+        this.y = y ?? -150;
+        this.width = width;
+        this.height = 100;
+        this.text = text;
+        this.isCorrect = isCorrect;
+        this.passed = passed ?? false;
+        this.markedForDeletion = false;
+    }
+    update() {
+        this.y += gameSpeed;
+        if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
+    }
+    draw() {
+        ctx.fillStyle = 'rgba(52, 152, 219, 0.6)'; 
+        ctx.fillRect(this.x + 5, this.y, this.width - 10, this.height);
+        ctx.strokeStyle = '#2980b9';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(this.x + 5, this.y, this.width - 10, this.height);
+
+        // 힌트 숨김 (?)
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 30px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText("?", this.x + this.width/2, this.y + 40);
+
+        // 보기 텍스트
+        ctx.font = '16px Malgun Gothic';
+        wrapText(ctx, this.text, this.x + this.width/2, this.y + 70, this.width - 20, 20);
+    }
+}
+
+// 텍스트 줄바꿈 (수정: 상단 문제 표시줄에도 사용 가능하도록 조정)
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    let words = text.split(' ');
+    let line = '';
+    
+    // 만약 단어 하나가 너무 길면(영어 등) 잘리는 문제 방지
+    // 여기서는 간단히 공백 기준 분리만 처리
+    
+    for(let n = 0; n < words.length; n++) {
+        let testLine = line + words[n] + ' ';
+        let metrics = ctx.measureText(testLine);
+        if (metrics.width > maxWidth && n > 0) {
+            ctx.fillText(line, x, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+        } else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, x, y);
+}
+
+class Particle {
+    constructor(x, y, color) {
+        this.x = x; this.y = y; this.color = color;
+        this.size = Math.random() * 5 + 2;
+        this.speedX = Math.random() * 6 - 3;
+        this.speedY = Math.random() * 6 - 3;
+        this.life = 100;
+    }
+    update() { this.x += this.speedX; this.y += this.speedY; this.life -= 2; }
+    draw() {
+        ctx.globalAlpha = this.life / 100;
+        ctx.fillStyle = this.color;
+        ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+        ctx.globalAlpha = 1.0;
+    }
+}
+
+function createFloatingText(text, x, y, color) {
+    floatingTexts.push({text, x, y, color, life: 60});
+}
+
+/**
+ * 5. 게임 로직
+ */
+function spawnGateRow() {
+    const qIndex = Math.floor(Math.random() * QUESTIONS.length);
+    const qData = QUESTIONS[qIndex];
+    currentQuestionObj = qData;
+
+    const gateWidth = GAME_WIDTH / 3;
+    
+    // 보기 생성 및 셔플 (정답 1개 + 오답 2개)
+    let options = [];
+    options.push({ text: qData.a, isCorrect: true });
+    
+    // 오답 리스트 셔플 후 2개 선택
+    let wrongPool = shuffle([...qData.w]);
+    options.push({ text: wrongPool[0] || "오답", isCorrect: false });
+    options.push({ text: wrongPool[1] || wrongPool[0] || "오답", isCorrect: false }); // 오답 부족시 중복 처리
+
+    // 최종 배치 셔플
+    options = shuffle(options);
+
+    for(let i=0; i<3; i++) {
+        gates.push(new Gate(i * gateWidth, gateWidth, options[i].text, options[i].isCorrect));
+    }
+}
+
+function spawnEnemy() {
+    if (Math.random() < 0.02 + (frameCount * 0.00001)) {
+        enemies.push(new Enemy());
+    }
+}
+
+function checkCollisions() {
+    // 총알 vs 적
+    bullets.forEach(bullet => {
+        enemies.forEach(enemy => {
+            const dist = Math.hypot(bullet.x - (enemy.x + 20), bullet.y - (enemy.y + 20));
+            if (dist < 20 + bullet.radius) {
+                enemy.hp--;
+                bullet.markedForDeletion = true;
+                for(let i=0; i<3; i++) particles.push(new Particle(bullet.x, bullet.y, '#f1c40f'));
+                if (enemy.hp <= 0) {
+                    enemy.markedForDeletion = true;
+                    score += 10;
+                    for(let i=0; i<10; i++) particles.push(new Particle(enemy.x+20, enemy.y+20, '#e74c3c'));
+                }
+            }
+        });
+    });
+
+    // 플레이어 vs 적
+    enemies.forEach(enemy => {
+        if (!enemy.markedForDeletion && 
+            player.x < enemy.x + enemy.width && player.x + player.width > enemy.x &&
+            player.y < enemy.y + enemy.height && player.y + player.height > enemy.y) {
+            
+            player.soldiers -= 5;
+            enemy.markedForDeletion = true;
+            createFloatingText("-5", player.x, player.y, "red");
+            consecutiveCorrect = 0; // 콤보 초기화
+            updateHUD();
+            ctx.translate(5, 0); setTimeout(() => ctx.translate(-5, 0), 50);
+        }
+    });
+
+    // 플레이어 vs 게이트
+    gates.forEach(gate => {
+        if (!gate.passed &&
+            player.x < gate.x + gate.width && player.x + player.width > gate.x &&
+            player.y < gate.y + gate.height && player.y + player.height > gate.y) {
+            
+            gate.passed = true;
+            
+            if (gate.isCorrect) {
+                player.soldiers *= 2;
+                totalCorrect++;
+                consecutiveCorrect++;
+                if(consecutiveCorrect > maxCombo) maxCombo = consecutiveCorrect;
+
+                createFloatingText("Correct!", player.x, player.y - 50, "#2ecc71");
+                score += 100;
+                
+                // 콤보 효과
+                const comboElem = document.getElementById('hud-combo');
+                comboElem.classList.remove('combo-active');
+                void comboElem.offsetWidth; // trigger reflow
+                comboElem.classList.add('combo-active');
+
+            } else {
+                player.soldiers = Math.floor(player.soldiers / 2);
+                consecutiveCorrect = 0;
+                createFloatingText("Wrong...", player.x, player.y - 50, "#e74c3c");
+            }
+
+            gates.forEach(g => { if (Math.abs(g.y - gate.y) < 10) g.passed = true; });
+            currentQuestionObj = null;
+            updateHUD();
+        }
+    });
+}
+
+function updateHUD() {
+    document.getElementById('hud-score').innerText = Math.floor(score);
+    document.getElementById('hud-total').innerText = totalCorrect;
+    document.getElementById('hud-combo').innerText = `Combo: ${consecutiveCorrect}`;
+}
+
+function drawRoad() {
+    ctx.fillStyle = '#34495e';
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 4;
+    ctx.setLineDash([20, 20]);
+    const lineOffset = (frameCount * gameSpeed) % 40;
+    ctx.beginPath(); ctx.moveTo(GAME_WIDTH/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH/3, GAME_HEIGHT); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(GAME_WIDTH*2/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH*2/3, GAME_HEIGHT); ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+function drawUI() {
+    // 상단 문제 표시줄
+    const uiHeight = 80;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, GAME_WIDTH, uiHeight);
+    
+    ctx.fillStyle = 'white'; 
+    ctx.textAlign = 'center';
+    
+    if (currentQuestionObj) {
+        ctx.font = 'bold 18px Malgun Gothic'; 
+        ctx.fillStyle = '#f39c12';
+        
+        // 문제 텍스트 줄바꿈 처리 (y좌표 30부터 시작, 줄간격 24)
+        wrapText(ctx, "Q. " + currentQuestionObj.q, GAME_WIDTH/2, 30, GAME_WIDTH - 40, 24);
+        
+        // 힌트 메시지 (문제 텍스트가 길 수 있으므로 하단에 고정하지 않고 상황에 따라 위치 조정 가능하나, 일단 고정)
+        // 만약 문제가 너무 길면 겹칠 수 있으므로, 단순화를 위해 하단에 붙여서 출력
+        // ctx.font = '14px Malgun Gothic'; 
+        // ctx.fillStyle = '#bdc3c7';
+        // ctx.fillText("알맞은 보기를 찾아 이동하세요!", GAME_WIDTH/2, 70); 
+    } else {
+        ctx.font = 'bold 20px Malgun Gothic';
+        ctx.fillText("다음 문제 준비 중...", GAME_WIDTH/2, 50);
+    }
+}
+
+function animate() {
+    if (gameState !== 'PLAYING') return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawRoad();
+
+    player.x += (targetX - player.x) * 0.1;
+    if (player.x < 0) player.x = 0;
+    if (player.x > GAME_WIDTH - player.width) player.x = GAME_WIDTH - player.width;
+
+    if (frameCount > nextGateFrame && !gates.some(g => g.y < GAME_HEIGHT && g.y > 0)) {
+        spawnGateRow();
+        nextGateFrame = frameCount + 400;
+    }
+    spawnEnemy();
+
+    gates.forEach(g => { g.update(); g.draw(); });
+    gates = gates.filter(g => !g.markedForDeletion);
+
+    enemies.forEach(e => { e.update(); e.draw(); });
+    enemies = enemies.filter(e => !e.markedForDeletion);
+
+    player.update();
+    player.draw();
+
+    bullets.forEach(b => { b.update(); b.draw(); });
+    bullets = bullets.filter(b => !b.markedForDeletion);
+
+    particles.forEach(p => { p.update(); p.draw(); });
+    particles = particles.filter(p => p.life > 0);
+
+    floatingTexts.forEach((ft, idx) => {
+        ft.y -= 1; ft.life--;
+        ctx.globalAlpha = ft.life/60; ctx.fillStyle = ft.color;
+        ctx.font = 'bold 20px Arial'; ctx.textAlign = 'center';
+        ctx.fillText(ft.text, ft.x, ft.y);
+        ctx.globalAlpha = 1.0;
+        if(ft.life <= 0) floatingTexts.splice(idx, 1);
+    });
+
+    checkCollisions();
+    drawUI();
+    
+    // 점수 증가 (생존 점수)
+    score += 0.1;
+    if(frameCount % 10 === 0) updateHUD(); // HUD 업데이트
+
+    frameCount++;
+    requestAnimationFrame(animate);
+}
+
+/**
+ * 6. 제어 및 이벤트 핸들러
+ */
+// 마우스/터치 입력
+function handleInput(e) {
+    if (gameState !== 'PLAYING') return;
+    let clientX = e.type.includes('touch') ? e.touches[0].clientX : e.clientX;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    targetX = (clientX - rect.left) * scaleX - 20;
+}
+window.addEventListener('mousemove', handleInput);
+window.addEventListener('touchmove', handleInput, {passive: false});
+window.addEventListener('keydown', (e) => {
+    if (gameState !== 'PLAYING') return;
+    if (e.key === 'ArrowLeft') targetX -= 30;
+    if (e.key === 'ArrowRight') targetX += 30;
+});
+
+// 시작/종료 함수
+function startNewGame() {
+    const nick = document.getElementById('nickname-input').value.trim();
+    if(!nick) { alert("닉네임을 입력해주세요!"); return; }
+    nickname = nick;
+    
+    // 이전 저장 삭제 (새 게임이므로)
+    localStorage.removeItem(SAVE_KEY);
+    
+    resetGameData();
+    startGameCommon();
+}
+
+function loadGameAndStart() {
+    const saveDataStr = localStorage.getItem(SAVE_KEY);
+    if (!saveDataStr) return;
+
+    const data = JSON.parse(saveDataStr);
+    
+    // 데이터 복구
+    score = data.score;
+    totalCorrect = data.totalCorrect;
+    consecutiveCorrect = data.consecutiveCorrect;
+    maxCombo = data.maxCombo;
+    nickname = data.nickname;
+    frameCount = data.frameCount;
+    nextGateFrame = data.nextGateFrame;
+    currentQuestionObj = data.currentQuestionObj;
+
+    player = new Player(data.player.x, data.player.y, data.player.soldiers);
+    enemies = data.enemies.map(e => new Enemy(e.x, e.y, e.hp));
+    gates = data.gates.map(g => new Gate(g.x, g.width, g.text, g.isCorrect, g.passed, g.y));
+    
+    targetX = player.x;
+    
+    startGameCommon();
+}
+
+function startGameCommon() {
+    document.getElementById('start-screen').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('hud').classList.remove('hidden');
+    gameState = 'PLAYING';
+    animate();
+}
+
+function resetGameData() {
+    player = new Player();
+    bullets = []; enemies = []; gates = []; particles = []; floatingTexts = [];
+    score = 0; frameCount = 0; nextGateFrame = 100;
+    targetX = GAME_WIDTH / 2 - 20;
+    totalCorrect = 0; consecutiveCorrect = 0; maxCombo = 0;
+    currentQuestionObj = null;
+    updateHUD();
+}
+
+function endGame() {
+    gameState = 'GAMEOVER';
+    saveRecord();
+    localStorage.removeItem(SAVE_KEY); // 게임 끝났으므로 저장 삭제
+
+    document.getElementById('hud').classList.add('hidden');
+    document.getElementById('game-over-screen').classList.remove('hidden');
+    document.getElementById('final-msg').innerText = `${nickname}님 수고하셨습니다!`;
+    document.getElementById('final-score-text').innerText = `최종 점수: ${Math.floor(score)}`;
+    document.getElementById('final-stats-text').innerText = `정답: ${totalCorrect}개 / 최대 콤보: ${maxCombo}`;
+}
+
+function returnToMain() {
+    document.getElementById('game-over-screen').classList.add('hidden');
+    document.getElementById('start-screen').classList.remove('hidden');
+    initStartScreen();
+}
+
+// 기록 보기
+function showRecords() {
+    const records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+    const tbody = document.querySelector('#records-table tbody');
+    tbody.innerHTML = '';
+    
+    if(records.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4">기록이 없습니다.</td></tr>';
+    } else {
+        records.forEach((rec, idx) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td>${idx+1}</td><td>${rec.name}</td><td>${rec.score}</td><td>${rec.correct}</td>`;
+            tbody.appendChild(tr);
+        });
+    }
+    document.getElementById('records-screen').classList.remove('hidden');
+}
+function hideRecords() {
+    document.getElementById('records-screen').classList.add('hidden');
+}
+
+// 초기화 확인
+function initStartScreen() {
+    if(checkSavedGame()) {
+        document.getElementById('resume-area').classList.remove('hidden');
+    } else {
+        document.getElementById('resume-area').classList.add('hidden');
+    }
+}
+
+// 자동 저장 (창 닫기/숨김 시)
+document.addEventListener("visibilitychange", () => {
+    if (document.hidden && gameState === 'PLAYING') {
+        saveGame();
+        gameState = 'PAUSED';
+    } else if (!document.hidden && gameState === 'PAUSED') {
+        // 복귀 시 자동 실행 (선택사항)
+        gameState = 'PLAYING';
+        animate();
+    }
+});
+
+// 창 닫기 전 저장
+window.addEventListener('beforeunload', () => {
+    if (gameState === 'PLAYING') saveGame();
+});
+
+window.addEventListener('resize', () => {
+    GAME_WIDTH = window.innerWidth > 600 ? 600 : window.innerWidth;
+    GAME_HEIGHT = window.innerHeight;
+    canvas.width = GAME_WIDTH; canvas.height = GAME_HEIGHT;
+    if(player) player.y = GAME_HEIGHT - 150;
+});
+
+// 초기 실행
+initStartScreen();
+
+</script>
+</body>
+</html>
