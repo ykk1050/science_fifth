@@ -512,6 +512,20 @@ class Enemy {
         if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
     }
     draw() {
+        // 게이트와 겹치는지 확인 (반투명 처리)
+        let isOverlapping = false;
+        for(const gate of gates) {
+            if (this.x < gate.x + gate.width &&
+                this.x + this.width > gate.x &&
+                this.y < gate.y + gate.height &&
+                this.y + this.height > gate.y) {
+                isOverlapping = true;
+                break;
+            }
+        }
+
+        if (isOverlapping) ctx.globalAlpha = 0.3;
+
         // 뭉친 적 그리기
         if (this.packSize > 1) {
             // 여러 마리 겹쳐서 그리기 (약간씩 오프셋)
@@ -544,6 +558,8 @@ class Enemy {
                 ctx.fillRect(this.x, this.y, this.width, this.height);
             }
         }
+
+        if (isOverlapping) ctx.globalAlpha = 1.0;
     }
 }
 
