@@ -297,7 +297,7 @@ const QUESTIONS = [
 let gameState = 'START'; // START, PLAYING, PAUSED, GAMEOVER
 let frameCount = 0;
 let score = 0;
-let gameSpeed = 1.5;
+let gameSpeed = 1.2;
 
 // 통계 변수
 let nickname = "학생";
@@ -1353,7 +1353,7 @@ function animate() {
     if(frameCount % 10 === 0) updateHUD(); // HUD 업데이트
 
     // [추가] 속도 점진적 증가 (최대 2.0까지)
-    if (gameSpeed < 2.0) {
+    if (gameSpeed < 1.8) {
         gameSpeed += 0.0002; 
     }
 
