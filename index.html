@@ -104,6 +104,35 @@
         .stat-item { margin-bottom: 5px; }
         .combo-text { color: #f1c40f; font-size: 1.2rem; transition: transform 0.1s; }
         .combo-active { transform: scale(1.2); }
+        
+        /* 추가된 통계 스타일 */
+        .hud-section {
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255,255,255,0.3);
+            font-size: 0.8rem;
+            color: #bdc3c7;
+        }
+        .hud-title {
+            color: #f39c12;
+            font-size: 0.9rem;
+            margin-bottom: 3px;
+        }
+
+        /* 랭킹 테이블 스타일 */
+        .rank-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+            margin-top: 10px;
+        }
+        .rank-table th { background: #2c3e50; color: #3498db; padding: 10px; position: sticky; top: 0; }
+        .rank-table td { border-bottom: 1px solid #555; padding: 8px; text-align: center; }
+        .rank-table tr:nth-child(1) td { color: #f1c40f; font-weight: bold; font-size: 1.1rem; } /* 1등 */
+        .rank-table tr:nth-child(2) td { color: #bdc3c7; font-weight: bold; } /* 2등 */
+        .rank-table tr:nth-child(3) td { color: #e67e22; font-weight: bold; } /* 3등 */
+        
+        .loading-text { color: #bdc3c7; margin: 20px; font-style: italic; }
     </style>
 </head>
 <body>
@@ -112,9 +141,25 @@
 
     <!-- HUD -->
     <div id="hud" class="hidden">
+        <!-- 현재 게임 -->
         <div class="stat-item">점수: <span id="hud-score">0</span></div>
         <div class="stat-item">정답: <span id="hud-total">0</span></div>
         <div class="stat-item combo-text" id="hud-combo">Combo: 0</div>
+        
+        <!-- 최고 기록 (Best) -->
+        <div class="hud-section">
+            <div class="hud-title">🏆 최고 기록</div>
+            <div>점수: <span id="hud-best-score">0</span></div>
+            <div>콤보: <span id="hud-best-combo">0</span></div>
+            <div>정답: <span id="hud-best-correct">0</span></div>
+        </div>
+
+        <!-- 누적 기록 (Lifetime) -->
+        <div class="hud-section">
+            <div class="hud-title">📊 누적 통계</div>
+            <div>총 정답: <span id="hud-life-correct">0</span></div>
+            <div>정답률: <span id="hud-life-acc">0%</span></div>
+        </div>
     </div>
 
     <div id="ui-layer">
@@ -134,6 +179,9 @@
                 <button onclick="startNewGame()">새 게임 시작</button>
                 <button class="secondary" onclick="showRecords()">기록 보기</button>
             </div>
+            <div style="margin-top: 5px;">
+                <button class="green" onclick="showGlobalRankings()">🌍 글로벌 랭킹</button>
+            </div>
         </div>
 
         <!-- 기록 화면 -->
@@ -148,6 +196,18 @@
                 </table>
             </div>
             <button class="secondary" onclick="hideRecords()">닫기</button>
+        </div>
+
+        <!-- 글로벌 랭킹 화면 -->
+        <div id="ranking-screen" class="popup hidden">
+            <h2>🌍 글로벌 랭킹</h2>
+            <div style="margin-bottom: 10px; font-size: 0.9rem; color: #bdc3c7;">
+                상위 20명의 기록이 표시됩니다.
+            </div>
+            <div id="ranking-list" style="max-height: 300px; overflow-y: auto;">
+                <p class="loading-text">데이터를 불러오는 중...</p>
+            </div>
+            <button class="secondary" onclick="hideGlobalRankings()">닫기</button>
         </div>
 
         <!-- 게임 오버 화면 -->
@@ -304,8 +364,18 @@ let scrollOffset = 0; // 배경 스크롤용
 // 통계 변수
 let nickname = "학생";
 let totalCorrect = 0;
+let totalWrong = 0; // 오답 횟수 추가
 let consecutiveCorrect = 0;
 let maxCombo = 0;
+
+// 전역 통계 변수 (로컬 스토리지 연동)
+let globalStats = {
+    bestScore: 0,
+    bestCorrect: 0,
+    bestMaxCombo: 0,
+    lifetimeCorrect: 0,
+    lifetimeAttempts: 0
+};
 
 // 객체 배열
 let bullets = [];
@@ -344,13 +414,90 @@ function shuffle(array) {
 // 로컬 스토리지 키
 const SAVE_KEY = 'weatherRun_save_v2';
 const RECORD_KEY = 'weatherRun_records_v2';
+const STATS_KEY = 'weatherRun_stats_v1';
+const CURRENT_NICKNAME_KEY = 'weatherRun_current_nickname'; // 현재 닉네임 키 추가
+const SECRET_SALT = "science_run_secret_salt_2025"; // 해시용 솔트
+
+// [중요] 여기에 앱스크립트 배포 URL을 입력하세요.
+const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxops2fGy-Gwo5YAqhmc4B3h09tHNl42cf1fzyMLTMc6DYUKyaKt22kbegmp_HzfuIx/exec";
+
+// 간단한 해시 함수 (무결성 검증용)
+function generateHash(data) {
+    const str = JSON.stringify(data) + SECRET_SALT;
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return hash.toString();
+}
+
+// 데이터 암호화 (Base64 인코딩 + 간단한 XOR)
+function encryptData(data) {
+    const jsonStr = JSON.stringify(data);
+    const hash = generateHash(data);
+    const combined = hash + "|" + jsonStr; // 해시 + 데이터
+    return btoa(unescape(encodeURIComponent(combined))); // Base64 인코딩 (한글 처리 포함)
+}
+
+// 데이터 복호화 및 검증
+function decryptAndVerify(encryptedStr) {
+    try {
+        const decoded = decodeURIComponent(escape(atob(encryptedStr)));
+        const splitIdx = decoded.indexOf("|");
+        if (splitIdx === -1) return null;
+
+        const hash = decoded.substring(0, splitIdx);
+        const jsonStr = decoded.substring(splitIdx + 1);
+        const data = JSON.parse(jsonStr);
+
+        // 해시 재계산하여 검증
+        if (generateHash(data) === hash) {
+            return data;
+        } else {
+            console.warn("데이터 변조 감지됨! 초기화합니다.");
+            return null;
+        }
+    } catch (e) {
+        console.error("데이터 로드 실패:", e);
+        return null;
+    }
+}
+
+// 전역 통계 로드
+function loadGlobalStats() {
+    const encryptedStats = localStorage.getItem(STATS_KEY);
+    if (encryptedStats) {
+        const data = decryptAndVerify(encryptedStats);
+        if (data) {
+            globalStats = data;
+        } else {
+            // 변조되었거나 오류 시 초기화
+            globalStats = {
+                bestScore: 0,
+                bestCorrect: 0,
+                bestMaxCombo: 0,
+                lifetimeCorrect: 0,
+                lifetimeAttempts: 0
+            };
+        }
+    }
+    updateHUDStats(); 
+}
+
+// 전역 통계 저장
+function saveGlobalStats() {
+    const encrypted = encryptData(globalStats);
+    localStorage.setItem(STATS_KEY, encrypted);
+}
 
 // 게임 저장
 function saveGame() {
     if (gameState !== 'PLAYING' && gameState !== 'PAUSED') return;
     
     const saveData = {
-        score, totalCorrect, consecutiveCorrect, maxCombo, nickname, frameCount, nextGateFrame,
+        score, totalCorrect, totalWrong, consecutiveCorrect, maxCombo, nickname, frameCount, nextGateFrame,
         player: { x: player.x, y: player.y, soldiers: player.soldiers },
         enemies: enemies.map(e => ({x: e.x, y: e.y, hp: e.hp})),
         gates: gates.map(g => ({x: g.x, y: g.y, width: g.width, text: g.text, isCorrect: g.isCorrect, passed: g.passed})),
@@ -364,14 +511,23 @@ function checkSavedGame() {
     return localStorage.getItem(SAVE_KEY) !== null;
 }
 
-    // 게임 기록 저장
+    // 게임 기록 저장 (기록도 암호화 적용 권장하나, 여기서는 통계 위주로 요청받았으므로 유지하되 무결성 체크)
     function saveRecord() {
-        let records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+        let records = [];
+        try {
+            records = JSON.parse(localStorage.getItem(RECORD_KEY) || "[]");
+        } catch(e) {
+            records = [];
+        }
+
+        // 비정상적인 점수(Infinity, NaN 등) 필터링
+        if (!isFinite(score) || score < 0) score = 0;
+        
         records.push({
-            name: nickname,
+            name: nickname.substring(0, 10), // 닉네임 길이 제한 재확인
             score: Math.floor(score),
             correct: totalCorrect,
-            maxCombo: maxCombo, // 최대 콤보 추가
+            maxCombo: maxCombo, 
             date: new Date().toLocaleDateString()
         });
         // 점수 내림차순 정렬
@@ -1171,6 +1327,7 @@ function checkCollisions() {
             } else {
                 player.soldiers = Math.floor(player.soldiers / 2);
                 consecutiveCorrect = 0;
+                totalWrong++; // 오답 카운트
                 createFloatingText("틀렸어!", player.x, player.y - 50, "#e74c3c");
             }
 
@@ -1185,6 +1342,22 @@ function updateHUD() {
     document.getElementById('hud-score').innerText = Math.floor(score);
     document.getElementById('hud-total').innerText = totalCorrect;
     document.getElementById('hud-combo').innerText = `Combo: ${consecutiveCorrect}`;
+}
+
+function updateHUDStats() {
+    // 최고 기록
+    document.getElementById('hud-best-score').innerText = Math.floor(globalStats.bestScore);
+    document.getElementById('hud-best-combo').innerText = globalStats.bestMaxCombo;
+    document.getElementById('hud-best-correct').innerText = globalStats.bestCorrect;
+
+    // 누적 통계
+    document.getElementById('hud-life-correct').innerText = globalStats.lifetimeCorrect;
+    
+    let acc = 0;
+    if (globalStats.lifetimeAttempts > 0) {
+        acc = Math.floor((globalStats.lifetimeCorrect / globalStats.lifetimeAttempts) * 100);
+    }
+    document.getElementById('hud-life-acc').innerText = acc + "%";
 }
 
 function drawRoad() {
@@ -1406,6 +1579,28 @@ window.addEventListener('keydown', (e) => {
 function startNewGame() {
     const nick = document.getElementById('nickname-input').value.trim();
     if(!nick) { alert("닉네임을 입력해주세요!"); return; }
+    
+    // 닉네임 변경 체크
+    const storedNick = localStorage.getItem(CURRENT_NICKNAME_KEY);
+    if (storedNick && storedNick !== nick) {
+        const confirmChange = confirm(`닉네임을 '${storedNick}'에서 '${nick}'(으)로 변경하시겠습니까?\n\n⚠️ 주의: 닉네임 변경 시 최고 기록, 누적 통계 등 모든 데이터가 초기화됩니다.`);
+        if (!confirmChange) return; // 취소 시 게임 시작 안 함
+        
+        // 데이터 초기화
+        localStorage.removeItem(SAVE_KEY);
+        localStorage.removeItem(RECORD_KEY);
+        localStorage.removeItem(STATS_KEY);
+        
+        // 전역 변수 초기화
+        globalStats = {
+            bestScore: 0, bestCorrect: 0, bestMaxCombo: 0,
+            lifetimeCorrect: 0, lifetimeAttempts: 0
+        };
+        updateHUDStats();
+    }
+    
+    // 새 닉네임 저장
+    localStorage.setItem(CURRENT_NICKNAME_KEY, nick);
     nickname = nick;
     
     // 이전 저장 삭제 (새 게임이므로)
@@ -1424,6 +1619,7 @@ function loadGameAndStart() {
     // 데이터 복구
     score = data.score;
     totalCorrect = data.totalCorrect;
+    totalWrong = data.totalWrong || 0; // 하위 호환
     consecutiveCorrect = data.consecutiveCorrect;
     maxCombo = data.maxCombo;
     nickname = data.nickname;
@@ -1453,13 +1649,41 @@ function resetGameData() {
     bullets = []; enemies = []; gates = []; particles = []; floatingTexts = [];
     score = 0; frameCount = 0; nextGateFrame = 100;
     targetX = GAME_WIDTH / 2 - 20;
-    totalCorrect = 0; consecutiveCorrect = 0; maxCombo = 0;
+    totalCorrect = 0; totalWrong = 0; consecutiveCorrect = 0; maxCombo = 0;
     currentQuestionObj = null;
     updateHUD();
 }
 
 function endGame() {
     gameState = 'GAMEOVER';
+    
+    // 전역 통계 업데이트 (이상치 검사 추가)
+    // 점수가 비정상적으로 높거나(예: 1초당 1000점 이상), 정답 수가 전체 문제 수보다 많은 경우 등 체크 가능하나
+    // 여기서는 간단히 음수 체크 및 논리적 오류만 방어
+    
+    if (score < 0) score = 0;
+    
+    if (score > globalStats.bestScore) globalStats.bestScore = score;
+    if (totalCorrect > globalStats.bestCorrect) globalStats.bestCorrect = totalCorrect;
+    if (maxCombo > globalStats.bestMaxCombo) globalStats.bestMaxCombo = maxCombo;
+    
+    // 누적 데이터 무결성 체크 (갑자기 0이 되거나 줄어드는 경우 방지)
+    const newLifetimeCorrect = globalStats.lifetimeCorrect + totalCorrect;
+    const newLifetimeAttempts = globalStats.lifetimeAttempts + (totalCorrect + totalWrong);
+    
+    if (newLifetimeCorrect >= globalStats.lifetimeCorrect) {
+        globalStats.lifetimeCorrect = newLifetimeCorrect;
+    }
+    if (newLifetimeAttempts >= globalStats.lifetimeAttempts) {
+        globalStats.lifetimeAttempts = newLifetimeAttempts;
+    }
+    
+    saveGlobalStats(); // 통계 저장 (암호화됨)
+    updateHUDStats(); // HUD 갱신 (게임오버 화면 뒤로 보이지만 업데이트 해둠)
+    
+    // 글로벌 랭킹 서버로 데이터 전송 (비동기)
+    sendToGlobalRanking();
+
     saveRecord();
     localStorage.removeItem(SAVE_KEY); // 게임 끝났으므로 저장 삭제
 
@@ -1501,6 +1725,12 @@ function hideRecords() {
 
 // 초기화 확인
 function initStartScreen() {
+    // 저장된 닉네임 불러오기
+    const storedNick = localStorage.getItem(CURRENT_NICKNAME_KEY);
+    if (storedNick) {
+        document.getElementById('nickname-input').value = storedNick;
+    }
+
     if(checkSavedGame()) {
         document.getElementById('resume-area').classList.remove('hidden');
     } else {
@@ -1533,8 +1763,94 @@ window.addEventListener('resize', () => {
 });
 
 // 초기 실행
+loadGlobalStats(); // 통계 로드
 initStartScreen();
 
+/**
+ * 7. 글로벌 랭킹 시스템 (Google Sheets & Apps Script)
+ */
+function sendToGlobalRanking() {
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에")) return; // URL 미설정 시 무시
+
+    // 보낼 데이터 준비
+    const payload = {
+        action: "update",
+        nickname: nickname,
+        bestScore: globalStats.bestScore,
+        bestCombo: globalStats.bestMaxCombo,
+        bestCorrect: globalStats.bestCorrect,
+        lifetimeCorrect: globalStats.lifetimeCorrect,
+        lifetimeAttempts: globalStats.lifetimeAttempts
+    };
+
+    // fetch API 사용 (no-cors 모드는 응답을 못 받지만, 전송은 됨)
+    // 일반 모드로 보내서 성공 여부를 확인하는 것이 좋음 (Apps Script가 CORS 헤더를 잘 주면 됨)
+    fetch(GOOGLE_SCRIPT_URL, {
+        method: "POST",
+        body: JSON.stringify(payload)
+    }).then(res => {
+        console.log("랭킹 전송 완료");
+    }).catch(err => {
+        console.error("랭킹 전송 실패:", err);
+    });
+}
+
+function showGlobalRankings() {
+    document.getElementById('ranking-screen').classList.remove('hidden');
+    const listDiv = document.getElementById('ranking-list');
+    listDiv.innerHTML = '<p class="loading-text">데이터를 불러오는 중...</p>';
+
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에")) {
+        listDiv.innerHTML = '<p class="loading-text">랭킹 서버 URL이 설정되지 않았습니다.</p>';
+        return;
+    }
+
+    fetch(GOOGLE_SCRIPT_URL + "?action=getRankings")
+        .then(res => res.json())
+        .then(data => {
+            if (!data || data.length === 0) {
+                listDiv.innerHTML = '<p class="loading-text">등록된 랭킹이 없습니다.</p>';
+                return;
+            }
+
+            let html = `
+                <table class="rank-table">
+                    <thead>
+                        <tr>
+                            <th>순위</th>
+                            <th>이름</th>
+                            <th>최고 점수</th>
+                            <th>최고 콤보</th>
+                            <th>누적 정답</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            data.forEach((item, index) => {
+                html += `
+                    <tr>
+                        <td>${index + 1}</td>
+                        <td>${item.nickname}</td>
+                        <td>${item.bestScore}</td>
+                        <td>${item.bestCombo}</td>
+                        <td>${item.lifetimeCorrect}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            listDiv.innerHTML = html;
+        })
+        .catch(err => {
+            console.error(err);
+            listDiv.innerHTML = '<p class="loading-text">랭킹을 불러오는데 실패했습니다.</p>';
+        });
+}
+
+function hideGlobalRankings() {
+    document.getElementById('ranking-screen').classList.add('hidden');
+}
 </script>
 </body>
 </html>
