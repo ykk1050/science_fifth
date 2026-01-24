@@ -1770,9 +1770,8 @@ initStartScreen();
  * 7. 글로벌 랭킹 시스템 (Google Sheets & Apps Script)
  */
 function sendToGlobalRanking() {
-    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에")) return; // URL 미설정 시 무시
+    if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에")) return;
 
-    // 보낼 데이터 준비
     const payload = {
         action: "update",
         nickname: nickname,
@@ -1783,16 +1782,19 @@ function sendToGlobalRanking() {
         lifetimeAttempts: globalStats.lifetimeAttempts
     };
 
-    // fetch API 사용 (no-cors 모드는 응답을 못 받지만, 전송은 됨)
-    // 일반 모드로 보내서 성공 여부를 확인하는 것이 좋음 (Apps Script가 CORS 헤더를 잘 주면 됨)
-    fetch(GOOGLE_SCRIPT_URL, {
-        method: "POST",
-        body: JSON.stringify(payload)
-    }).then(res => {
-        console.log("랭킹 전송 완료");
-    }).catch(err => {
-        console.error("랭킹 전송 실패:", err);
-    });
+    // [수정] GET 방식으로 변경 (CORS 문제 최소화 및 전송 보장)
+    // 데이터를 쿼리 스트링으로 변환하여 전송합니다.
+    const queryString = new URLSearchParams(payload).toString();
+    
+    fetch(GOOGLE_SCRIPT_URL + "?" + queryString)
+        .then(res => res.json())
+        .then(data => {
+            console.log("랭킹 전송 성공:", data);
+        })
+        .catch(err => {
+            // GET 방식은 실패 확률이 낮지만, 혹시 실패하더라도 게임 진행엔 영향 없도록 경고만 표시
+            console.warn("랭킹 전송 실패:", err);
+        });
 }
 
 function showGlobalRankings() {
@@ -1805,6 +1807,7 @@ function showGlobalRankings() {
         return;
     }
 
+    // [수정] GET 요청은 그대로 유지하되 에러 메시지 구체화
     fetch(GOOGLE_SCRIPT_URL + "?action=getRankings")
         .then(res => res.json())
         .then(data => {
@@ -1844,7 +1847,17 @@ function showGlobalRankings() {
         })
         .catch(err => {
             console.error(err);
-            listDiv.innerHTML = '<p class="loading-text">랭킹을 불러오는데 실패했습니다.</p>';
+            // 로컬 실행 시 발생할 수 있는 문제 안내
+            listDiv.innerHTML = `
+                <div style="padding: 20px; color: #e74c3c;">
+                    <p>랭킹을 불러오지 못했습니다.</p>
+                    <p style="font-size: 0.8rem; color: #bdc3c7; margin-top: 10px;">
+                        * 인터넷 연결을 확인하세요.<br>
+                        * HTML 파일을 직접 실행(file://)하면 보안 문제로 차단될 수 있습니다.<br>
+                        * VS Code의 'Live Server' 등을 이용해 실행해보세요.
+                    </p>
+                </div>
+            `;
         });
 }
 
