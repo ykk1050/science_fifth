@@ -133,6 +133,34 @@
         .rank-table tr:nth-child(3) td { color: #e67e22; font-weight: bold; } /* 3등 */
         
         .loading-text { color: #bdc3c7; margin: 20px; font-style: italic; }
+
+        /* 랭킹 탭 스타일 */
+        .rank-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 10px;
+            gap: 5px;
+        }
+        .rank-tab {
+            background: #34495e;
+            border: 1px solid #7f8c8d;
+            color: #bdc3c7;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            border-radius: 5px;
+            flex: 1;
+        }
+        .rank-tab.active {
+            background: #3498db;
+            color: white;
+            border-color: #2980b9;
+            font-weight: bold;
+        }
+        .my-rank-row {
+            background-color: rgba(52, 152, 219, 0.2);
+            border: 2px solid #3498db !important;
+        }
     </style>
 </head>
 <body>
@@ -201,12 +229,31 @@
         <!-- 글로벌 랭킹 화면 -->
         <div id="ranking-screen" class="popup hidden">
             <h2>🌍 글로벌 랭킹</h2>
-            <div style="margin-bottom: 10px; font-size: 0.9rem; color: #bdc3c7;">
-                상위 20명의 기록이 표시됩니다.
+            
+            <!-- 랭킹 탭 -->
+            <div class="rank-tabs">
+                <button class="rank-tab active" id="tab-bestScore" onclick="loadRankings('bestScore')">점수</button>
+                <button class="rank-tab" id="tab-bestCombo" onclick="loadRankings('bestCombo')">콤보</button>
+                <button class="rank-tab" id="tab-lifetimeCorrect" onclick="loadRankings('lifetimeCorrect')">누적정답</button>
+                <button class="rank-tab" id="tab-accuracy" onclick="loadRankings('accuracy')">정답률</button>
             </div>
-            <div id="ranking-list" style="max-height: 300px; overflow-y: auto;">
+            
+            <div id="rank-info" style="font-size: 0.8rem; color: #bdc3c7; margin: 5px 0;">
+                상위 100위까지 표시됩니다.
+            </div>
+
+            <div id="ranking-list" style="max-height: 250px; overflow-y: auto;">
                 <p class="loading-text">데이터를 불러오는 중...</p>
             </div>
+            
+            <!-- 내 순위 (100위 밖일 때 표시) -->
+            <div id="my-rank-section" style="border-top: 1px solid #555; padding-top: 10px; margin-top: 10px; display: none;">
+                <div style="color: #f1c40f; font-weight: bold; font-size: 0.9rem; margin-bottom: 5px;">내 순위</div>
+                <table class="rank-table" style="margin-top: 0;">
+                    <tbody id="my-rank-body"></tbody>
+                </table>
+            </div>
+
             <button class="secondary" onclick="hideGlobalRankings()">닫기</button>
         </div>
 
@@ -1799,63 +1846,118 @@ function sendToGlobalRanking() {
 
 function showGlobalRankings() {
     document.getElementById('ranking-screen').classList.remove('hidden');
+    loadRankings('bestScore'); // 기본값: 점수 랭킹
+}
+
+function loadRankings(sortBy) {
     const listDiv = document.getElementById('ranking-list');
+    const myRankSection = document.getElementById('my-rank-section');
+    const rankInfo = document.getElementById('rank-info');
+    
+    // 탭 활성화 처리
+    document.querySelectorAll('.rank-tab').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(`tab-${sortBy}`).classList.add('active');
+    
+    // 안내 문구 업데이트
+    if (sortBy === 'accuracy') {
+        rankInfo.innerHTML = "⚠️ 정답률 랭킹은 30문제 이상 푼 사용자만 집계됩니다.<br>(상위 100위 표시)";
+        rankInfo.style.color = "#e74c3c";
+    } else {
+        rankInfo.innerHTML = "상위 100위까지 표시됩니다.";
+        rankInfo.style.color = "#bdc3c7";
+    }
+
     listDiv.innerHTML = '<p class="loading-text">데이터를 불러오는 중...</p>';
+    myRankSection.style.display = 'none';
 
     if (!GOOGLE_SCRIPT_URL || GOOGLE_SCRIPT_URL.includes("여기에")) {
         listDiv.innerHTML = '<p class="loading-text">랭킹 서버 URL이 설정되지 않았습니다.</p>';
         return;
     }
 
-    // [수정] GET 요청은 그대로 유지하되 에러 메시지 구체화
-    fetch(GOOGLE_SCRIPT_URL + "?action=getRankings")
+    // 내 닉네임도 같이 보내서 순위를 확인
+    fetch(`${GOOGLE_SCRIPT_URL}?action=getRankings&sortBy=${sortBy}&myNickname=${encodeURIComponent(nickname)}`)
         .then(res => res.json())
-        .then(data => {
+        .then(response => {
+            const data = response.top100;
+            const myRankData = response.myRank;
+
             if (!data || data.length === 0) {
                 listDiv.innerHTML = '<p class="loading-text">등록된 랭킹이 없습니다.</p>';
                 return;
             }
 
+            // 테이블 헤더 결정
+            let valueHeader = "점수";
+            if (sortBy === 'bestCombo') valueHeader = "콤보";
+            else if (sortBy === 'lifetimeCorrect') valueHeader = "누적 정답";
+            else if (sortBy === 'accuracy') valueHeader = "정답률";
+
             let html = `
                 <table class="rank-table">
                     <thead>
                         <tr>
-                            <th>순위</th>
-                            <th>이름</th>
-                            <th>최고 점수</th>
-                            <th>최고 콤보</th>
-                            <th>누적 정답</th>
+                            <th style="width: 15%">순위</th>
+                            <th style="width: 50%">이름</th>
+                            <th style="width: 35%">${valueHeader}</th>
                         </tr>
                     </thead>
                     <tbody>
             `;
 
+            let isMeInTop100 = false;
+
             data.forEach((item, index) => {
+                let value = item.bestScore;
+                if (sortBy === 'bestCombo') value = item.bestCombo;
+                else if (sortBy === 'lifetimeCorrect') value = item.lifetimeCorrect;
+                else if (sortBy === 'accuracy') value = item.accuracy.toFixed(1) + '%';
+
+                const isMe = item.nickname === nickname;
+                if (isMe) isMeInTop100 = true;
+
                 html += `
-                    <tr>
+                    <tr class="${isMe ? 'my-rank-row' : ''}">
                         <td>${index + 1}</td>
                         <td>${item.nickname}</td>
-                        <td>${item.bestScore}</td>
-                        <td>${item.bestCombo}</td>
-                        <td>${item.lifetimeCorrect}</td>
+                        <td>${value}</td>
                     </tr>
                 `;
             });
 
             html += '</tbody></table>';
             listDiv.innerHTML = html;
+
+            // 내 순위가 100위 밖이거나 데이터에 없지만, 별도로 받은 경우 표시
+            if (!isMeInTop100 && myRankData) {
+                let myValue = myRankData.bestScore;
+                if (sortBy === 'bestCombo') myValue = myRankData.bestCombo;
+                else if (sortBy === 'lifetimeCorrect') myValue = myRankData.lifetimeCorrect;
+                else if (sortBy === 'accuracy') myValue = myRankData.accuracy.toFixed(1) + '%';
+
+                const myRankHtml = `
+                    <tr class="my-rank-row">
+                        <td style="width: 15%">${myRankData.rank}</td>
+                        <td style="width: 50%">${myRankData.nickname}</td>
+                        <td style="width: 35%">${myValue}</td>
+                    </tr>
+                `;
+                document.getElementById('my-rank-body').innerHTML = myRankHtml;
+                myRankSection.style.display = 'block';
+            } else if (!isMeInTop100 && sortBy === 'accuracy' && globalStats.lifetimeAttempts < 30) {
+                 // 정답률 랭킹인데 조건 미달인 경우
+                 document.getElementById('my-rank-body').innerHTML = `
+                    <tr><td colspan="3" style="color: #e74c3c;">30문제 이상 풀어야 랭킹에 진입합니다. (현재: ${globalStats.lifetimeAttempts})</td></tr>
+                 `;
+                 myRankSection.style.display = 'block';
+            }
+
         })
         .catch(err => {
             console.error(err);
-            // 로컬 실행 시 발생할 수 있는 문제 안내
             listDiv.innerHTML = `
                 <div style="padding: 20px; color: #e74c3c;">
                     <p>랭킹을 불러오지 못했습니다.</p>
-                    <p style="font-size: 0.8rem; color: #bdc3c7; margin-top: 10px;">
-                        * 인터넷 연결을 확인하세요.<br>
-                        * HTML 파일을 직접 실행(file://)하면 보안 문제로 차단될 수 있습니다.<br>
-                        * VS Code의 'Live Server' 등을 이용해 실행해보세요.
-                    </p>
                 </div>
             `;
         });
