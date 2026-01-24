@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>초등학교 5학년 과학 서바이벌</title>
+    <title>라스트 노바: 인류의 마지막 빛</title>
     <style>
         body {
             margin: 0;
@@ -232,6 +232,18 @@
         #bgm-btn:hover {
             background: rgba(255, 255, 255, 0.2);
         }
+
+        .version-text {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #95a5a6; /* 회색 */
+            font-size: 0.8rem;
+            z-index: 100;
+            pointer-events: none;
+            font-family: sans-serif;
+            opacity: 0.8;
+        }
     </style>
 </head>
 <body>
@@ -248,9 +260,15 @@
     <audio id="sfx-wrong">
         <source src="error-010-206498.mp3" type="audio/mp3">
     </audio>
+    <audio id="sfx-bomb">
+        <source src="nuclear-explosion-386181.mp3" type="audio/mp3">
+    </audio>
 
     <!-- BGM 토글 버튼 -->
     <button id="bgm-btn" onclick="toggleSound()">🎵 소리: OFF</button>
+    
+    <!-- 버전 정보 -->
+    <div class="version-text">라스트 노바: 인류의 마지막 빛 made by gamtudyssam 0.0012</div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -1143,6 +1161,7 @@ function applyItemEffect(type) {
             for(let i=0; i<10; i++) particles.push(new Particle(e.x, e.y, '#e74c3c'));
         });
         createFloatingText("BOOM!", player.x, player.y, "red");
+        playSound('bomb'); // 폭발음 재생
     }
 }
 
@@ -1992,6 +2011,7 @@ initStartScreen();
 const bgmAudio = document.getElementById('bgm-audio');
 const sfxCorrect = document.getElementById('sfx-correct');
 const sfxWrong = document.getElementById('sfx-wrong');
+const sfxBomb = document.getElementById('sfx-bomb');
 const bgmBtn = document.getElementById('bgm-btn');
 
 let isSoundOn = false; // 소리 전체 ON/OFF 상태
@@ -2026,6 +2046,7 @@ function playSound(type) {
     let audio = null;
     if (type === 'correct') audio = sfxCorrect;
     else if (type === 'wrong') audio = sfxWrong;
+    else if (type === 'bomb') audio = sfxBomb;
 
     if (audio) {
         audio.currentTime = 0; // 처음부터 재생
