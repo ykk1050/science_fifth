@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -263,12 +263,24 @@
     <audio id="sfx-bomb">
         <source src="nuclear-explosion-386181.mp3" type="audio/mp3">
     </audio>
+    <audio id="sfx-shoot">
+        <source src="22-caliber-with-ricochet-39679.mp3" type="audio/mp3">
+    </audio>
+    <audio id="sfx-boss-explosion">
+        <source src="explosion-fx-343683.mp3" type="audio/mp3">
+    </audio>
+    <audio id="sfx-small-explosion">
+        <source src="small-explosion-103931.mp3" type="audio/mp3">
+    </audio>
+    <audio id="sfx-boss-dash">
+        <source src="lazercannon-37980.mp3" type="audio/mp3">
+    </audio>
 
     <!-- BGM 토글 버튼 -->
     <button id="bgm-btn" onclick="toggleSound()">🎵 소리: OFF</button>
     
     <!-- 버전 정보 -->
-    <div class="version-text">라스트 노바: 인류의 마지막 빛 made by gamtudyssam 0.0012</div>
+    <div class="version-text">라스트 노바: 인류의 마지막 빛 made by gamtudyssam 0.0013</div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -407,6 +419,10 @@ const itemImgs = {
 itemImgs.bomb.src = 'bomb.png';
 itemImgs.fever.src = 'fever.png';
 
+// 배경 이미지 로드
+const bgImg = new Image();
+bgImg.src = '미래 도시 풍경의 반전.png';
+
 // 문제 데이터 (전체 포함)
 const QUESTIONS = [
     // [날씨와 우리 생활]
@@ -416,7 +432,6 @@ const QUESTIONS = [
     { q: "우리나라 여름철 날씨에 영향을 주는 기단은?", a: "북태평양 (고온다습)", w: ["시베리아 (한랭건조)", "오호츠크해 (한랭다습)"] },
     { q: "하루 중 기온이 가장 높은 때는?", a: "오후 2~3시경", w: ["정오 (12시)", "해 질 무렵"] },
     { q: "지면이 데워져 공기가 위로 올라가는 현상은?", a: "대류 현상", w: ["복사 현상", "전도 현상"] },
-    { q: "비가 내리는 양을 측정하는 기구는?", a: "우량계", w: ["풍향계", "습도계"] },
     { q: "공기의 무게로 인해 생기는 압력은?", a: "기압", w: ["수압", "혈압"] },
     { q: "공기의 습도를 측정하는 도구는?", a: "건습구 온도계", w: ["온도계", "기압계"] },
     { q: "건구와 습구 온도의 차이가 없을 때 습도는?", a: "100%", w: ["0%", "50%"] },
@@ -864,6 +879,9 @@ class Player {
             
             bullets.push(new Bullet(startX, this.y, angle));
         }
+        
+        // 발사 효과음 재생
+        playSound('shoot');
     }
 }
 
@@ -873,7 +891,7 @@ class Bullet {
         this.y = y;
         this.angle = angle;
         this.radius = 4;
-        this.speed = 10;
+        this.speed = 15; // 레이저다운 속도감 (10 -> 15)
         this.markedForDeletion = false;
     }
     update() {
@@ -884,10 +902,26 @@ class Bullet {
         if (this.y < 0 || this.x < 0 || this.x > GAME_WIDTH) this.markedForDeletion = true;
     }
     draw() {
-        ctx.fillStyle = '#f1c40f';
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(this.angle);
+
+        // 레이저 색상 결정 (피버 타임엔 붉은/황금 레이저, 평소엔 네온 블루)
+        const glowColor = feverActive ? '#e74c3c' : '#00eaff';
+        const coreColor = feverActive ? '#f1c40f' : '#e0ffff';
+
+        // 레이저 광선 효과 (Glow)
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = glowColor;
+        
+        // 레이저 빔 그리기 (길쭉한 타원형)
+        ctx.fillStyle = coreColor;
         ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        // x, y, radiusX, radiusY, rotation, startAngle, endAngle
+        ctx.ellipse(0, 0, 3, 20, 0, 0, Math.PI * 2);
         ctx.fill();
+
+        ctx.restore();
     }
 }
 
@@ -944,6 +978,8 @@ class Enemy {
         if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
     }
     draw() {
+        ctx.save(); // 스타일 저장
+
         // 게이트와 겹치는지 확인 (반투명 처리)
         let isOverlapping = false;
         for(const gate of gates) {
@@ -956,7 +992,13 @@ class Enemy {
             }
         }
 
-        if (isOverlapping) ctx.globalAlpha = 0.3;
+        if (isOverlapping) {
+            ctx.globalAlpha = 0.3;
+        } else {
+            // 시인성 향상: 적 주변에 붉은 후광 효과
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = 'red';
+        }
 
         // 타입별 그리기
         if (this.type === 'tank') {
@@ -967,7 +1009,8 @@ class Enemy {
                 ctx.fillStyle = '#c0392b'; // 더 진한 빨강
                 ctx.fillRect(this.x, this.y, this.width, this.height);
             }
-            // 체력바 표시
+            // 체력바 표시 (그림자 끔)
+            ctx.shadowBlur = 0; 
             ctx.fillStyle = 'red';
             ctx.fillRect(this.x, this.y - 10, this.width, 5);
             ctx.fillStyle = '#2ecc71';
@@ -985,6 +1028,7 @@ class Enemy {
                     ctx.fillRect(this.x + offsetX, this.y - offsetY, this.width, this.height);
                 }
             }
+            ctx.shadowBlur = 0; // 텍스트엔 그림자 끔
             ctx.fillStyle = 'white';
             ctx.font = 'bold 14px Arial';
             ctx.textAlign = 'center';
@@ -1002,7 +1046,7 @@ class Enemy {
             // 스피드형은 색상 다르게 등 추가 가능
         }
 
-        if (isOverlapping) ctx.globalAlpha = 1.0;
+        ctx.restore(); // 스타일 복구
     }
 }
 
@@ -1150,8 +1194,15 @@ function applyItemEffect(type) {
         feverTimer = 300; // 5초
         createFloatingText("FEVER!!", player.x, player.y, "orange");
     } else if (type === 'plus') {
-        player.soldiers += 10;
-        createFloatingText("+10", player.x, player.y, "#2ecc71");
+        // 1.3배 증가 (기존 +10에서 변경)
+        const oldSoldiers = player.soldiers;
+        player.soldiers = Math.floor(player.soldiers * 1.3);
+        
+        // 최소 1명은 증가하도록 보정
+        if (player.soldiers <= oldSoldiers) player.soldiers = oldSoldiers + 1;
+        
+        const diff = Math.floor(player.soldiers - oldSoldiers);
+        createFloatingText(`+${diff}`, player.x, player.y, "#2ecc71");
     } else if (type === 'bomb') {
         // 화면 내 모든 적 제거
         enemies.forEach(e => {
@@ -1291,6 +1342,7 @@ class Boss {
         if (this.level >= 4 && Math.random() < 0.2) {
              this.isDashing = true;
              createFloatingText("DASH!", this.x + this.width/2, this.y, "red");
+             playSound('boss-dash'); // 돌진 효과음
         }
         
         // 레벨 5 이상: 고속 레이저 (빠른 탄속)
@@ -1300,6 +1352,11 @@ class Boss {
     }
 
     draw() {
+        ctx.save();
+        // 보스 후광 효과
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = 'purple';
+
         // 보스 외형 그리기
         if (this.image && this.image.complete && this.image.naturalWidth > 0) {
             ctx.drawImage(this.image, this.x, this.y, this.width, this.height);
@@ -1308,6 +1365,8 @@ class Boss {
             ctx.fillRect(this.x, this.y, this.width, this.height);
         }
         
+        ctx.shadowBlur = 0; // 체력바 등에는 그림자 제거
+
         // 보스 체력바
         ctx.fillStyle = 'black';
         ctx.fillRect(this.x, this.y - 20, this.width, 10);
@@ -1321,6 +1380,8 @@ class Boss {
         ctx.font = 'bold 16px Arial';
         ctx.textAlign = 'center';
         ctx.fillText(`Lv.${this.level}`, this.x + this.width/2, this.y - 25);
+
+        ctx.restore();
     }
 }
 
@@ -1460,6 +1521,7 @@ function checkCollisions() {
                 if (enemy.hp <= 0) {
                     enemy.markedForDeletion = true;
                     score += 10;
+                    playSound('small-explosion'); // 적 파괴음
                     for(let i=0; i<10; i++) particles.push(new Particle(enemy.x+20, enemy.y+20, '#e74c3c'));
                 }
             }
@@ -1600,21 +1662,46 @@ function updateHUDStats() {
 }
 
 function drawRoad() {
-    ctx.fillStyle = '#34495e';
-    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
-    ctx.lineWidth = 4;
-    ctx.setLineDash([20, 20]);
-    
-    // 보스전 모드가 아닐 때만 스크롤 진행
+    // 배경 이미지가 로드되지 않았으면 기존 방식대로 그리기
+    if (!bgImg.complete || bgImg.naturalWidth === 0) {
+        ctx.fillStyle = '#34495e';
+        ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 4;
+        ctx.setLineDash([20, 20]);
+        
+        if (!isBossBattleMode) {
+            scrollOffset += gameSpeed;
+        }
+        const lineOffset = scrollOffset % 40;
+        
+        ctx.beginPath(); ctx.moveTo(GAME_WIDTH/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH/3, GAME_HEIGHT); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(GAME_WIDTH*2/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH*2/3, GAME_HEIGHT); ctx.stroke();
+        ctx.setLineDash([]);
+        return;
+    }
+
+    // 배경 이미지 스크롤
     if (!isBossBattleMode) {
         scrollOffset += gameSpeed;
     }
-    const lineOffset = scrollOffset % 40;
+
+    // 배경 높이를 화면 높이와 맞춤 (비율 유지하고 싶으면 계산 필요하지만, 꽉 채우기 위해 강제 조정)
+    const bgHeight = GAME_HEIGHT;
     
-    ctx.beginPath(); ctx.moveTo(GAME_WIDTH/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH/3, GAME_HEIGHT); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(GAME_WIDTH*2/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH*2/3, GAME_HEIGHT); ctx.stroke();
-    ctx.setLineDash([]);
+    // 무한 스크롤 계산
+    const yPos = scrollOffset % bgHeight;
+    
+    // 두 개의 이미지를 이어 그려서 끊김 없이 표현
+    // 첫 번째 이미지 (아래로 이동 중)
+    ctx.drawImage(bgImg, 0, yPos, GAME_WIDTH, bgHeight);
+    
+    // 두 번째 이미지 (첫 번째 이미지 바로 위)
+    ctx.drawImage(bgImg, 0, yPos - bgHeight, GAME_WIDTH, bgHeight);
+
+    // [시인성 개선] 배경을 반투명 검은색으로 덮어 적과 탄막이 잘 보이게 함
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 }
 
 function drawUI() {
@@ -1742,6 +1829,7 @@ function animate() {
                     isBossBattleMode = false; // 보스전 모드 해제 (이동 재개)
                     score += 500; // 보스 처치 점수
                     createFloatingText("BOSS CLEARED!", boss.x + boss.width/2, boss.y, "#f1c40f");
+                    playSound('boss-explosion'); // 보스 파괴음
                     // 대량 폭발 효과
                     for(let i=0; i<50; i++) particles.push(new Particle(boss.x + Math.random()*boss.width, boss.y + Math.random()*boss.height, '#e74c3c'));
                 }
@@ -1885,11 +1973,14 @@ function startGameCommon() {
 
 function resetGameData() {
     player = new Player();
-    bullets = []; enemies = []; gates = []; particles = []; floatingTexts = [];
+    bullets = []; enemies = []; gates = []; particles = []; floatingTexts = []; items = [];
+    boss = null; // 보스 초기화 추가
+    isBossBattleMode = false; // 보스전 모드 해제
     score = 0; frameCount = 0; nextGateFrame = 100;
     targetX = GAME_WIDTH / 2 - 20;
     totalCorrect = 0; totalWrong = 0; consecutiveCorrect = 0; maxCombo = 0;
     currentQuestionObj = null;
+    bossSpawnScore = 1000; // 보스 등장 점수 초기화
     updateHUD();
 }
 
@@ -2012,6 +2103,10 @@ const bgmAudio = document.getElementById('bgm-audio');
 const sfxCorrect = document.getElementById('sfx-correct');
 const sfxWrong = document.getElementById('sfx-wrong');
 const sfxBomb = document.getElementById('sfx-bomb');
+const sfxShoot = document.getElementById('sfx-shoot');
+const sfxBossExplosion = document.getElementById('sfx-boss-explosion');
+const sfxSmallExplosion = document.getElementById('sfx-small-explosion');
+const sfxBossDash = document.getElementById('sfx-boss-dash');
 const bgmBtn = document.getElementById('bgm-btn');
 
 let isSoundOn = false; // 소리 전체 ON/OFF 상태
@@ -2032,6 +2127,15 @@ function toggleSound() {
         bgmAudio.play().then(() => {
             bgmBtn.innerText = "🎵 소리: ON";
             bgmBtn.style.background = "rgba(46, 204, 113, 0.7)";
+            
+            // 효과음 미리 로드 (모바일/브라우저 정책 대응)
+            sfxShoot.volume = 0;
+            sfxShoot.play().then(() => {
+                sfxShoot.pause();
+                sfxShoot.currentTime = 0;
+                sfxShoot.volume = 1.0; // 원본 볼륨 복구
+            }).catch(() => {});
+            
         }).catch(e => {
             console.log("오디오 재생 실패:", e);
             isSoundOn = false; // 재생 실패 시 상태 복구
@@ -2047,11 +2151,25 @@ function playSound(type) {
     if (type === 'correct') audio = sfxCorrect;
     else if (type === 'wrong') audio = sfxWrong;
     else if (type === 'bomb') audio = sfxBomb;
+    else if (type === 'shoot') audio = sfxShoot;
+    else if (type === 'boss-explosion') audio = sfxBossExplosion;
+    else if (type === 'small-explosion') audio = sfxSmallExplosion;
+    else if (type === 'boss-dash') audio = sfxBossDash;
 
     if (audio) {
-        audio.currentTime = 0; // 처음부터 재생
-        audio.volume = 0.8; // 효과음은 좀 더 크게
-        audio.play().catch(e => console.log("효과음 재생 실패", e));
+        if (type === 'shoot') {
+            // 총알 소리는 자주 나므로 겹쳐서 재생되도록 처리
+            // cloneNode 대신 new Audio 사용이 호환성이 더 좋을 수 있음
+            const sound = new Audio(audio.currentSrc || audio.src);
+            sound.volume = 0.2; // 볼륨 0.4 -> 0.2로 반감
+            sound.play().catch(e => {});
+        } else {
+            audio.currentTime = 0; // 처음부터 재생
+            audio.volume = 0.8; // 기본 효과음 크기
+            if(type === 'boss-explosion') audio.volume = 1.0; // 보스 폭발은 크게
+            
+            audio.play().catch(e => console.log("효과음 재생 실패", e));
+        }
     }
 }
 
