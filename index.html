@@ -298,6 +298,8 @@ let gameState = 'START'; // START, PLAYING, PAUSED, GAMEOVER
 let frameCount = 0;
 let score = 0;
 let gameSpeed = 1.2;
+let isBossBattleMode = false; // 보스전 모드 (정지)
+let scrollOffset = 0; // 배경 스크롤용
 
 // 통계 변수
 let nickname = "학생";
@@ -479,21 +481,21 @@ class Player {
     }
 
     shoot() {
-        // 병사 수에 따라 발사체 개수 및 패턴 결정 (최대 20000명 기준 세분화)
+        // 병사 수에 따라 발사체 개수 및 패턴 결정 (초반 빠른 성장, 후반 완만)
         let count = 1;
         
-        if (this.soldiers < 50) count = 1;
-        else if (this.soldiers < 100) count = 2;
-        else if (this.soldiers < 300) count = 3;
-        else if (this.soldiers < 600) count = 4;
-        else if (this.soldiers < 1000) count = 5;
-        else if (this.soldiers < 2000) count = 6;
-        else if (this.soldiers < 4000) count = 7;
-        else if (this.soldiers < 7000) count = 8;
-        else if (this.soldiers < 10000) count = 9;
-        else if (this.soldiers < 15000) count = 10;
-        else if (this.soldiers < 20000) count = 12;
-        else count = 15; // 20000명 이상 최대 화력
+        if (this.soldiers < 20) count = 1;      // ~19: 1발
+        else if (this.soldiers < 50) count = 2; // 20~49: 2발 (빠른 성장)
+        else if (this.soldiers < 100) count = 3;// 50~99: 3발
+        else if (this.soldiers < 200) count = 4;// 100~199: 4발
+        else if (this.soldiers < 500) count = 5;// 200~499: 5발
+        else if (this.soldiers < 1000) count = 6;// 500~999: 6발
+        else if (this.soldiers < 2500) count = 7;// 1000~2499: 7발 (여기서부터 간격 넓어짐)
+        else if (this.soldiers < 5000) count = 8;// 2500~4999: 8발
+        else if (this.soldiers < 9000) count = 9;// 5000~8999: 9발
+        else if (this.soldiers < 14000) count = 10;// 9000~13999: 10발
+        else if (this.soldiers < 20000) count = 12;// 14000~19999: 12발
+        else count = 15; // 20000명 이상: 15발 (최대 화력)
 
         // 광폭화(Fever) 시 발사체 2배
         if (feverActive) {
@@ -559,13 +561,14 @@ class Enemy {
         this.y = y ?? -50;
         this.type = type; // normal, tank, speed, zigzag, pack, boss
         
-        // 속도 및 크기 설정
-        this.speed = gameSpeed + Math.random() * 2;
+        // 속도 및 크기 설정 (게임 속도가 1.8로 줄었으므로 적 기본 속도 소폭 상향)
+        this.speed = gameSpeed + 1 + Math.random() * 2; // 기본 +1 추가
+        
         if (this.type === 'tank') {
             this.width = 60; this.height = 60;
-            this.speed = gameSpeed * 0.8; // 느림
+            this.speed = gameSpeed * 0.8 + 0.5; // 탱크도 최소 속도 보장
         } else if (this.type === 'speed') {
-            this.speed = gameSpeed * 1.5 + 2; // 빠름
+            this.speed = gameSpeed * 1.5 + 3; // 스피드형은 더 빠르게
         }
 
         // 뭉친 크기
@@ -687,15 +690,12 @@ class Gate {
         ctx.lineWidth = 3;
         ctx.strokeRect(this.x + 5, this.y, this.width - 10, this.height);
 
-        // 힌트 숨김 (?)
+        // 보기 텍스트 (폰트 키우고 중앙 정렬)
         ctx.fillStyle = 'white';
-        ctx.font = 'bold 30px Arial';
+        ctx.font = 'bold 20px Malgun Gothic';
         ctx.textAlign = 'center';
-        ctx.fillText("?", this.x + this.width/2, this.y + 40);
-
-        // 보기 텍스트
-        ctx.font = '16px Malgun Gothic';
-        wrapText(ctx, this.text, this.x + this.width/2, this.y + 70, this.width - 20, 20);
+        // y 위치 조정: ?가 없어졌으므로 조금 더 위로 올려서 중앙에 가깝게 배치
+        wrapText(ctx, this.text, this.x + this.width/2, this.y + 45, this.width - 20, 24);
     }
 }
 
@@ -933,7 +933,16 @@ class Boss {
 
 function spawnBoss() {
     boss = new Boss();
-    createFloatingText("WARNING: BOSS!", GAME_WIDTH/2 - 50, 200, "red");
+    // 레벨 3 이상부터는 보스전 집중 모드 (스크롤 정지, 잡몹 제거)
+    if (boss.level >= 3) {
+        isBossBattleMode = true;
+        gates = []; // 게이트 제거
+        enemies = []; // 잡몹 제거
+        createFloatingText("⚠️ HIGH LEVEL BOSS! ⚠️", GAME_WIDTH/2, 200, "red");
+        createFloatingText("MOVEMENT STOPPED!", GAME_WIDTH/2, 250, "red");
+    } else {
+        createFloatingText("WARNING: BOSS!", GAME_WIDTH/2 - 50, 200, "red");
+    }
 }
 
 // 텍스트 줄바꿈 (수정: 상단 문제 표시줄에도 사용 가능하도록 조정)
@@ -1184,7 +1193,13 @@ function drawRoad() {
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
     ctx.lineWidth = 4;
     ctx.setLineDash([20, 20]);
-    const lineOffset = (frameCount * gameSpeed) % 40;
+    
+    // 보스전 모드가 아닐 때만 스크롤 진행
+    if (!isBossBattleMode) {
+        scrollOffset += gameSpeed;
+    }
+    const lineOffset = scrollOffset % 40;
+    
     ctx.beginPath(); ctx.moveTo(GAME_WIDTH/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH/3, GAME_HEIGHT); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(GAME_WIDTH*2/3, -40+lineOffset); ctx.lineTo(GAME_WIDTH*2/3, GAME_HEIGHT); ctx.stroke();
     ctx.setLineDash([]);
@@ -1228,10 +1243,16 @@ function animate() {
     if (player.x > GAME_WIDTH - player.width) player.x = GAME_WIDTH - player.width;
 
     if (frameCount > nextGateFrame && !gates.some(g => g.y < GAME_HEIGHT && g.y > 0)) {
-        spawnGateRow();
-        nextGateFrame = frameCount + 400;
+        if (!isBossBattleMode) { // 보스전 모드 아닐 때만 생성
+            spawnGateRow();
+            // 속도가 느려졌으므로 게이트 간격을 조금 더 넓힘 (400 -> 450)
+            nextGateFrame = frameCount + 450;
+        }
     }
-    spawnEnemy();
+    
+    if (!isBossBattleMode) { // 보스전 모드 아닐 때만 잡몹 생성
+        spawnEnemy();
+    }
     
     // 아이템 생성
     spawnItem();
@@ -1306,6 +1327,7 @@ function animate() {
                 
                 if (boss.hp <= 0) {
                     boss.markedForDeletion = true;
+                    isBossBattleMode = false; // 보스전 모드 해제 (이동 재개)
                     score += 500; // 보스 처치 점수
                     createFloatingText("BOSS CLEARED!", boss.x + boss.width/2, boss.y, "#f1c40f");
                     // 대량 폭발 효과
@@ -1352,8 +1374,8 @@ function animate() {
     score += 0.1;
     if(frameCount % 10 === 0) updateHUD(); // HUD 업데이트
 
-    // [추가] 속도 점진적 증가 (최대 2.0까지)
-    if (gameSpeed < 1.8) {
+    // [추가] 속도 점진적 증가 (최대 1.8까지)
+    if (!isBossBattleMode && gameSpeed < 1.8) {
         gameSpeed += 0.0002; 
     }
 
