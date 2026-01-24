@@ -292,6 +292,14 @@ for(let i=1; i<=4; i++) {
     bossImgs.push(img);
 }
 
+// 아이템 이미지 로드
+const itemImgs = {
+    bomb: new Image(),
+    fever: new Image()
+};
+itemImgs.bomb.src = 'bomb.png';
+itemImgs.fever.src = 'fever.png';
+
 // 문제 데이터 (전체 포함)
 const QUESTIONS = [
     // [날씨와 우리 생활]
@@ -924,22 +932,67 @@ class Item {
         if (this.y > GAME_HEIGHT) this.markedForDeletion = true;
     }
     draw() {
-        // 아이템 박스 그리기
-        ctx.fillStyle = '#f1c40f'; // 노란색 박스
-        ctx.fillRect(this.x, this.y, this.width, this.height);
-        ctx.strokeStyle = 'white';
-        ctx.strokeRect(this.x, this.y, this.width, this.height);
+        // 아이템 박스 그리기 (이미지 또는 이모지 사용)
         
-        // 아이콘/텍스트
-        ctx.fillStyle = 'black';
-        ctx.font = 'bold 20px Arial';
-        ctx.textAlign = 'center';
-        let text = "?";
-        if (this.type === 'shield') text = "S"; // Shield
-        if (this.type === 'fever') text = "F"; // Fever
-        if (this.type === 'bomb') text = "B"; // Bomb
-        if (this.type === 'plus') text = "+"; // Plus
-        ctx.fillText(text, this.x + this.width/2, this.y + 27);
+        if (this.type === 'bomb') {
+            // 폭탄 이미지
+            if (itemImgs.bomb.complete && itemImgs.bomb.naturalWidth > 0) {
+                ctx.drawImage(itemImgs.bomb, this.x, this.y, this.width, this.height);
+            } else {
+                // 이미지 로드 실패 시 기존 사각형
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.strokeStyle = 'white';
+                ctx.strokeRect(this.x, this.y, this.width, this.height);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("B", this.x + this.width/2, this.y + 27);
+            }
+        } else if (this.type === 'fever') {
+            // 피버 이미지 (정사각형 없이 이미지 자체만)
+            // 피버 이미지는 보통 화려하므로 약간 더 크게 그려도 됨
+            const size = this.width * 1.2;
+            const offset = (size - this.width) / 2;
+            
+            if (itemImgs.fever.complete && itemImgs.fever.naturalWidth > 0) {
+                ctx.drawImage(itemImgs.fever, this.x - offset, this.y - offset, size, size);
+            } else {
+                ctx.fillStyle = '#f39c12';
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("F", this.x + this.width/2, this.y + 27);
+            }
+        } else if (this.type === 'shield') {
+            // 방패: 사각형 안에 이모지 🛡️
+            ctx.fillStyle = '#3498db'; // 파란색 배경
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+            
+            ctx.font = '24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText("🛡️", this.x + this.width/2, this.y + this.height/2);
+            ctx.textBaseline = 'alphabetic'; // 복구
+        } else if (this.type === 'plus') {
+            // 플러스: 사각형 안에 이모지 ➕ (또는 텍스트)
+            ctx.fillStyle = '#2ecc71'; // 초록색 배경
+            ctx.fillRect(this.x, this.y, this.width, this.height);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(this.x, this.y, this.width, this.height);
+            
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText("+", this.x + this.width/2, this.y + this.height/2 + 2);
+            ctx.textBaseline = 'alphabetic';
+        }
     }
 }
 
