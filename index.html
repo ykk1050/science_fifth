@@ -161,9 +161,96 @@
             background-color: rgba(52, 152, 219, 0.2);
             border: 2px solid #3498db !important;
         }
+
+        /* 시작 화면 커스텀 스타일 */
+        #start-screen {
+            background: url('background (2).png') no-repeat center center;
+            background-size: cover;
+            padding: 40px;
+            width: 500px;
+            border: 2px solid #ecf0f1;
+        }
+
+        .start-content-box {
+            /* 배경 제거 */
+            background: none;
+            padding: 10px;
+        }
+
+        #start-screen h1 {
+            color: #c0392b; /* 붉은색 제목 */
+            /* 흰색 테두리 효과 (가독성 확보) */
+            text-shadow: 
+                -2px -2px 0 #fff,  
+                 2px -2px 0 #fff,
+                -2px  2px 0 #fff,
+                 2px  2px 0 #fff;
+            margin-bottom: 15px;
+        }
+
+        #start-screen p {
+            color: #2c3e50; /* 짙은 남색 텍스트 */
+            font-weight: bold;
+            /* 흰색 테두리/후광 효과 */
+            text-shadow: 
+                -1px -1px 0 #fff,  
+                 1px -1px 0 #fff,
+                -1px  1px 0 #fff,
+                 1px  1px 0 #fff,
+                 0 0 10px #fff;
+            margin-bottom: 20px;
+        }
+
+        /* 시작 화면 내부 버튼 스타일 조정 */
+        #start-screen button {
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            border: 2px solid white; /* 버튼이 잘 보이도록 테두리 추가 */
+        }
+        
+        #start-screen input[type="text"] {
+            border: 2px solid #3498db;
+            background: rgba(255, 255, 255, 0.9); /* 입력창은 잘 보여야 하므로 배경 유지 */
+            color: #2c3e50;
+            font-weight: bold;
+        }
+
+        /* BGM 버튼 스타일 */
+        #bgm-btn {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 20;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid white;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        #bgm-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
     </style>
 </head>
 <body>
+    
+    <!-- BGM 오디오 태그 (루프 재생) -->
+    <audio id="bgm-audio" loop>
+        <source src="cinematic-epic-music-459422.mp3" type="audio/mp3">
+    </audio>
+    
+    <!-- 효과음 오디오 태그 -->
+    <audio id="sfx-correct">
+        <source src="bonus-points-190035.mp3" type="audio/mp3">
+    </audio>
+    <audio id="sfx-wrong">
+        <source src="error-010-206498.mp3" type="audio/mp3">
+    </audio>
+
+    <!-- BGM 토글 버튼 -->
+    <button id="bgm-btn" onclick="toggleSound()">🎵 소리: OFF</button>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -193,28 +280,30 @@
     <div id="ui-layer">
         <!-- 시작 화면 -->
         <div id="start-screen" class="popup">
-            <h1>🌤️ 과학 서바이벌</h1>
-            <p>초등학교 5학년 과학 총정리</p>
-            
-            <input type="text" id="nickname-input" placeholder="닉네임을 입력하세요" maxlength="8">
-            
-            <div id="resume-area" class="hidden">
-                <p style="color: #f39c12;">저장된 게임이 있습니다!</p>
-                <button class="green" onclick="loadGameAndStart()">이어하기</button>
-            </div>
+            <div class="start-content-box">
+                <h1>라스트 노바<br><span style="font-size: 0.7em;">: 인류의 마지막 빛</span></h1>
+                <p>미지의 외계인들이 지구를 삼키려 한다. 이제, 인류의 마지막 희망인 당신이 외계 본거지로 향한다. 모든 것을 걸고 싸워, 인류의 새벽을 다시 맞이하라!</p>
+                
+                <input type="text" id="nickname-input" placeholder="닉네임을 입력하세요" maxlength="8">
+                
+                <div id="resume-area" class="hidden">
+                    <p style="color: #e67e22;">저장된 게임이 있습니다!</p>
+                    <button class="green" onclick="loadGameAndStart()">이어하기</button>
+                </div>
 
-            <div>
-                <button onclick="startNewGame()">새 게임 시작</button>
-                <button class="secondary" onclick="showRecords()">기록 보기</button>
-            </div>
-            <div style="margin-top: 5px;">
-                <button class="green" onclick="showGlobalRankings()">🌍 글로벌 랭킹</button>
+                <div>
+                    <button onclick="startNewGame()">새 게임 시작</button>
+                    <button class="secondary" onclick="showRecords()"> 나의 기록 보기</button>
+                </div>
+                <div style="margin-top: 5px;">
+                    <button class="green" onclick="showGlobalRankings()">🌍 세계의 위대한 용사들 명단</button>
+                </div>
             </div>
         </div>
 
         <!-- 기록 화면 -->
         <div id="records-screen" class="popup hidden">
-            <h2>🏆 명예의 전당</h2>
+            <h2>🏆 지구를 위한 나의 위대한 기록</h2>
             <div style="max-height: 200px; overflow-y: auto;">
                 <table id="records-table">
                     <thead>
@@ -228,7 +317,7 @@
 
         <!-- 글로벌 랭킹 화면 -->
         <div id="ranking-screen" class="popup hidden">
-            <h2>🌍 글로벌 랭킹</h2>
+            <h2>🌍 세계의 위대한 용사들 명단</h2>
             
             <!-- 랭킹 탭 -->
             <div class="rank-tabs">
@@ -1446,6 +1535,7 @@ function checkCollisions() {
 
                 createFloatingText("정답!", player.x, player.y - 50, "#2ecc71");
                 score += 100;
+                playSound('correct'); // 정답 효과음
                 
                 // 콤보 효과
                 const comboElem = document.getElementById('hud-combo');
@@ -1458,6 +1548,7 @@ function checkCollisions() {
                 consecutiveCorrect = 0;
                 totalWrong++; // 오답 카운트
                 createFloatingText("틀렸어!", player.x, player.y - 50, "#e74c3c");
+                playSound('wrong'); // 오답 효과음
             }
 
             gates.forEach(g => { if (Math.abs(g.y - gate.y) < 10) g.passed = true; });
@@ -1894,6 +1985,54 @@ window.addEventListener('resize', () => {
 // 초기 실행
 loadGlobalStats(); // 통계 로드
 initStartScreen();
+
+/**
+ * 8. 오디오 시스템
+ */
+const bgmAudio = document.getElementById('bgm-audio');
+const sfxCorrect = document.getElementById('sfx-correct');
+const sfxWrong = document.getElementById('sfx-wrong');
+const bgmBtn = document.getElementById('bgm-btn');
+
+let isSoundOn = false; // 소리 전체 ON/OFF 상태
+
+function toggleSound() {
+    if (isSoundOn) {
+        // 소리 끄기
+        bgmAudio.pause();
+        isSoundOn = false;
+        bgmBtn.innerText = "🎵 소리: OFF";
+        bgmBtn.style.background = "rgba(0, 0, 0, 0.5)";
+    } else {
+        // 소리 켜기
+        isSoundOn = true;
+        bgmAudio.volume = 0.5; // BGM 볼륨 50%
+        
+        // 사용자 제스처 후 재생 시도
+        bgmAudio.play().then(() => {
+            bgmBtn.innerText = "🎵 소리: ON";
+            bgmBtn.style.background = "rgba(46, 204, 113, 0.7)";
+        }).catch(e => {
+            console.log("오디오 재생 실패:", e);
+            isSoundOn = false; // 재생 실패 시 상태 복구
+            alert("브라우저 설정으로 인해 오디오 재생이 차단되었습니다. 화면을 클릭 후 다시 시도해주세요.");
+        });
+    }
+}
+
+function playSound(type) {
+    if (!isSoundOn) return; // 소리 꺼져있으면 재생 안 함
+
+    let audio = null;
+    if (type === 'correct') audio = sfxCorrect;
+    else if (type === 'wrong') audio = sfxWrong;
+
+    if (audio) {
+        audio.currentTime = 0; // 처음부터 재생
+        audio.volume = 0.8; // 효과음은 좀 더 크게
+        audio.play().catch(e => console.log("효과음 재생 실패", e));
+    }
+}
 
 /**
  * 7. 글로벌 랭킹 시스템 (Google Sheets & Apps Script)
