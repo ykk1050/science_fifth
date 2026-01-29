@@ -280,7 +280,7 @@
     <button id="bgm-btn" onclick="toggleSound()">🎵 소리: OFF</button>
     
     <!-- 버전 정보 -->
-    <div class="version-text">라스트 노바: 인류의 마지막 빛 made by gamtudyssam 0.0013</div>
+    <div class="version-text">라스트 노바: 인류의 마지막 빛 made by gamtudyssam 0.0014</div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -1226,7 +1226,7 @@ class EnemyBullet {
         this.type = type; // normal, laser
         this.radius = type === 'laser' ? 10 : 6;
         this.markedForDeletion = false;
-        this.color = type === 'laser' ? '#e74c3c' : '#9b59b6'; // 레이저는 빨강, 일반탄은 보라
+        this.color = type === 'laser' ? '#e74c3c' : '#FFD700'; // 레이저는 빨강, 일반탄은 보라
     }
     update() {
         this.x += Math.cos(this.angle) * this.speed;
